@@ -30,7 +30,7 @@ from rag import (
     reformulate_query,
     get_answer_streaming,
 )
-from agents import run_agent_pipeline, run_tool_agent
+from agent_pipeline import run_agent_pipeline, run_tool_agent
 from security import get_audit_summary
 
 ANALYTICAL_KEYWORDS = [

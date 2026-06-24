@@ -8,7 +8,7 @@ Three agents run in sequence as a LangGraph StateGraph:
                            Tier 2 escalation.
 
 Run directly to execute a small built-in test:
-    python3 agents.py
+    python3 agent_pipeline.py
 """
 
 import re
@@ -49,13 +49,29 @@ ANSWER_SYSTEM_PROMPT = (
     "enterprise knowledge base."
 )
 
-embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+# Built lazily (not at import time) so importing this module never requires
+# OPENAI_API_KEY to already be set.
+_embeddings: OpenAIEmbeddings | None = None
+_vectorstore: Chroma | None = None
 
-vectorstore = Chroma(
-    collection_name=COLLECTION_NAME,
-    embedding_function=embeddings,
-    persist_directory=CHROMA_DIR,
-)
+
+def _get_embeddings() -> OpenAIEmbeddings:
+    global _embeddings
+    if _embeddings is None:
+        _embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+    return _embeddings
+
+
+def _get_vectorstore() -> Chroma:
+    global _vectorstore
+    if _vectorstore is None:
+        _vectorstore = Chroma(
+            collection_name=COLLECTION_NAME,
+            embedding_function=_get_embeddings(),
+            persist_directory=CHROMA_DIR,
+        )
+    return _vectorstore
+
 
 llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
 
@@ -107,7 +123,7 @@ def search_tickets_by_category(category: str) -> str:
     ERP Access. Use this when user asks about a specific type of IT issue.
     """
     try:
-        results = vectorstore.similarity_search(
+        results = _get_vectorstore().similarity_search(
             f"{category} issue resolution",
             k=5,
             filter={"category": category},
@@ -139,13 +155,13 @@ def count_tickets_by_category(category: str = "all") -> str:
     """
     try:
         if category != "all" and category in TICKET_CATEGORIES:
-            results = vectorstore.get(where={"category": category})
+            results = _get_vectorstore().get(where={"category": category})
             count = len(results.get("ids", []))
             return f"{category}: {count} tickets in knowledge base"
 
         counts = {}
         for cat in TICKET_CATEGORIES:
-            results = vectorstore.get(where={"category": cat})
+            results = _get_vectorstore().get(where={"category": cat})
             counts[cat] = len(results.get("ids", []))
 
         summary = "\n".join(
@@ -176,7 +192,7 @@ def get_resolution_time_stats(category: str = "all") -> str:
 
         stats = {}
         for cat in target_cats:
-            results = vectorstore.get(
+            results = _get_vectorstore().get(
                 where={"category": cat}, include=["metadatas"]
             )
             metadatas = results.get("metadatas", [])
@@ -290,7 +306,7 @@ class AgentState(TypedDict):
 # Agent 1: Retrieval Agent ---------------------------------------------------
 @traceable(name="Retrieval Agent")
 def retrieval_agent(state: AgentState) -> dict:
-    results = vectorstore.similarity_search_with_relevance_scores(
+    results = _get_vectorstore().similarity_search_with_relevance_scores(
         state["question"], k=TOP_K
     )
     context = "\n\n".join(doc.page_content for doc, _ in results)

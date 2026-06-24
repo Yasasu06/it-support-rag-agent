@@ -43,16 +43,30 @@ SYSTEM_PROMPT = (
 )
 
 # Step 2: connect to the existing ChromaDB collection ----------------------
-embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+# Built lazily (not at import time) so importing this module never requires
+# OPENAI_API_KEY to already be set.
+_embeddings: OpenAIEmbeddings | None = None
+_vectorstore: Chroma | None = None
+_rag_chain = None
 
-vectorstore = Chroma(
-    collection_name=COLLECTION_NAME,
-    embedding_function=embeddings,
-    persist_directory=CHROMA_DIR,
-)
 
-# Step 3: retriever that fetches the top 3 most relevant tickets -----------
-retriever = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
+def _get_embeddings() -> OpenAIEmbeddings:
+    global _embeddings
+    if _embeddings is None:
+        _embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+    return _embeddings
+
+
+def _get_vectorstore() -> Chroma:
+    global _vectorstore
+    if _vectorstore is None:
+        _vectorstore = Chroma(
+            collection_name=COLLECTION_NAME,
+            embedding_function=_get_embeddings(),
+            persist_directory=CHROMA_DIR,
+        )
+    return _vectorstore
+
 
 # Step 4: build the LangChain RAG chain ------------------------------------
 prompt = ChatPromptTemplate.from_messages(
@@ -89,15 +103,20 @@ def format_docs(docs) -> str:
     return "\n\n".join(doc.page_content for doc in docs)
 
 
-rag_chain = (
-    {
-        "context": retriever | format_docs,
-        "question": RunnablePassthrough(),
-    }
-    | prompt
-    | llm
-    | StrOutputParser()
-)
+def _get_rag_chain():
+    global _rag_chain
+    if _rag_chain is None:
+        retriever = _get_vectorstore().as_retriever(search_kwargs={"k": TOP_K})
+        _rag_chain = (
+            {
+                "context": retriever | format_docs,
+                "question": RunnablePassthrough(),
+            }
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+    return _rag_chain
 
 
 # Step 5: query reformulation -----------------------------------------------
@@ -166,7 +185,7 @@ _conversation_memory = _ConversationBufferWindowMemory(k=5)
 def get_answer(question: str) -> str:
     """Return a grounded, citation-backed answer for the given question."""
     question = reformulate_query(question)
-    return rag_chain.invoke(question)
+    return _get_rag_chain().invoke(question)
 
 
 def get_answer_with_memory(
@@ -204,7 +223,7 @@ def get_answer_with_memory(
         augmented_question = question
     augmented_question = reformulate_query(augmented_question)
 
-    answer = rag_chain.invoke(augmented_question)
+    answer = _get_rag_chain().invoke(augmented_question)
 
     _conversation_memory.save_context(
         {"input": question},
@@ -227,7 +246,7 @@ def get_answer_streaming(question: str) -> Generator[str, None, None]:
     """
     reformulated = reformulate_query(question)
 
-    docs = vectorstore.similarity_search(reformulated, k=TOP_K)
+    docs = _get_vectorstore().similarity_search(reformulated, k=TOP_K)
     context = format_docs(docs)
 
     streaming_llm = ChatOpenAI(
