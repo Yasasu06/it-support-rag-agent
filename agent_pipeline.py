@@ -83,7 +83,15 @@ def _get_vectorstore() -> Chroma:
     return _vectorstore
 
 
-llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
+_chat_llm = None
+
+
+def _get_chat_llm() -> ChatOpenAI:
+    global _chat_llm
+    if _chat_llm is None:
+        _chat_llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
+    return _chat_llm
+
 
 answer_prompt = ChatPromptTemplate.from_messages(
     [
@@ -112,7 +120,14 @@ answer_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-answer_chain = answer_prompt | llm | StrOutputParser()
+_answer_chain = None
+
+
+def _get_answer_chain():
+    global _answer_chain
+    if _answer_chain is None:
+        _answer_chain = answer_prompt | _get_chat_llm() | StrOutputParser()
+    return _answer_chain
 
 
 # Analytical tools -------------------------------------------------------------
@@ -246,11 +261,18 @@ TOOL_AGENT_SYSTEM_PROMPT = (
     "cite specific ticket IDs when referencing incidents."
 )
 
-_tool_agent = create_react_agent(
-    model=ChatOpenAI(model=CHAT_MODEL, temperature=0),
-    tools=TOOLS,
-    prompt=TOOL_AGENT_SYSTEM_PROMPT,
-)
+_tool_agent = None
+
+
+def _get_tool_agent():
+    global _tool_agent
+    if _tool_agent is None:
+        _tool_agent = create_react_agent(
+            model=_get_chat_llm(),
+            tools=TOOLS,
+            prompt=TOOL_AGENT_SYSTEM_PROMPT,
+        )
+    return _tool_agent
 
 
 def run_tool_agent(question: str) -> dict:
@@ -266,7 +288,7 @@ def run_tool_agent(question: str) -> dict:
     pipeline_question = masked_question if detected_pii else question
 
     try:
-        result = _tool_agent.invoke(
+        result = _get_tool_agent().invoke(
             {"messages": [{"role": "user", "content": pipeline_question}]},
             config={"recursion_limit": 8},
         )
@@ -327,7 +349,7 @@ def retrieval_agent(state: AgentState) -> dict:
 # Agent 2: Answer Agent -------------------------------------------------------
 @traceable(name="Answer Agent")
 def answer_agent(state: AgentState) -> dict:
-    answer = answer_chain.invoke(
+    answer = _get_answer_chain().invoke(
         {"context": state["context"], "question": state["question"]}
     )
     return {"answer": answer}
