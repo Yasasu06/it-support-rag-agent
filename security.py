@@ -17,9 +17,20 @@ from collections import Counter
 from datetime import datetime
 
 from presidio_analyzer import AnalyzerEngine
+from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 
-analyzer = AnalyzerEngine()
+# Presidio's AnalyzerEngine() defaults to en_core_web_lg if no nlp_engine is
+# given. Pin to en_core_web_sm explicitly so it matches the model actually
+# downloaded at startup (railway.toml), keeping memory usage down.
+_nlp_engine = NlpEngineProvider(
+    nlp_configuration={
+        "nlp_engine_name": "spacy",
+        "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+    }
+).create_engine()
+
+analyzer = AnalyzerEngine(nlp_engine=_nlp_engine)
 anonymizer = AnonymizerEngine()
 
 LOG_FILE = "query_audit_log.jsonl"
