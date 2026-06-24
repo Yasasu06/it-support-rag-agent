@@ -20,9 +20,9 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 
-# Presidio's AnalyzerEngine() defaults to en_core_web_lg if no nlp_engine is
-# given. Pin to en_core_web_sm explicitly so it matches the model actually
-# downloaded at startup (railway.toml), keeping memory usage down.
+# Presidio's AnalyzerEngine() defaults to the large spaCy model if no
+# nlp_engine is given. Pin to the small model explicitly so it matches what's
+# actually downloaded at startup (railway.toml), keeping memory usage down.
 _nlp_engine = NlpEngineProvider(
     nlp_configuration={
         "nlp_engine_name": "spacy",
