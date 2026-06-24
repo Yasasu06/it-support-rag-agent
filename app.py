@@ -70,7 +70,7 @@ def log_feedback(
         f.write(_json.dumps(entry) + "\n")
 
 # Configuration --------------------------------------------------------------
-CHROMA_DIR = "chroma_db"
+CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
 COLLECTION_NAME = "it_support_tickets"
 EMBEDDING_MODEL = "text-embedding-3-small"
 TOP_K = 3

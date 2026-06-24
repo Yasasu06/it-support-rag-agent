@@ -38,8 +38,9 @@ from connectors.huggingface_connector import (
 )
 from normalize import normalize_all_sources
 
-CHROMA_DIR = os.path.join(
-    os.path.dirname(__file__), "chroma_db"
+CHROMA_DIR = os.getenv(
+    "CHROMA_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "chroma_db"),
 )
 
 def run_multi_source_ingest():

@@ -3,6 +3,10 @@ set -e
 
 echo "Starting IT Support RAG Agent..."
 
+# Persistent volume must be mounted at this path in the Railway dashboard
+# (Settings -> Volumes) so ChromaDB survives across deploys/restarts.
+export CHROMA_DB_PATH=/app/chroma_db
+
 # Download spaCy model if not present
 python3 -m spacy download en_core_web_sm
 
@@ -19,7 +23,7 @@ try:
         embedding_function=OpenAIEmbeddings(
             model='text-embedding-3-small'
         ),
-        persist_directory='/app/chroma_db'
+        persist_directory=os.environ['CHROMA_DB_PATH']
     )
     count = db._collection.count()
     print(count)

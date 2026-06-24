@@ -40,7 +40,7 @@ except Exception:
 load_dotenv()
 
 # Configuration -------------------------------------------------------------
-CHROMA_DIR = "chroma_db"
+CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
 COLLECTION_NAME = "it_support_tickets"
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
