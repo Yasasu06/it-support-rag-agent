@@ -1,2 +1,6 @@
 [phases.setup]
-nixPkgs = ["gcc-unwrapped", "stdenv.cc.cc.lib"]
+nixPkgs = ["python312", "gcc-unwrapped",
+           "stdenv.cc.cc.lib"]
+
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.12"
