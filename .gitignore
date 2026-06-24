@@ -12,3 +12,4 @@ real_data/
 ingestion_summary.json
 scheduler_log.jsonl
 feedback_log.jsonl
+.streamlit/secrets.toml
