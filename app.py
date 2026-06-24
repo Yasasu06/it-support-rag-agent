@@ -414,6 +414,13 @@ st.markdown(
     button[data-testid="baseButton-header"] svg {
         display: none !important;
     }
+    details summary > span {
+      display: none !important;
+    }
+    [data-testid="stExpander"] summary::marker {
+      display: none !important;
+      content: "" !important;
+    }
 
     /* Spinner */
     [data-testid="stSpinner"] svg {
