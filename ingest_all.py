@@ -10,7 +10,6 @@ Run with:
 
 import os
 import sys
-import shutil
 import logging
 from dotenv import load_dotenv
 from tqdm import tqdm
@@ -106,10 +105,19 @@ def run_multi_source_ingest():
         f"{len(all_tickets)} tickets"
     )
 
-    logger.info("Clearing existing ChromaDB...")
-    if os.path.exists(CHROMA_DIR):
-        shutil.rmtree(CHROMA_DIR)
-        logger.info("ChromaDB cleared")
+    logger.info("Clearing existing ChromaDB collection...")
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(
+            path=CHROMA_DIR
+        )
+        try:
+            client.delete_collection("it_support_tickets")
+            logger.info("Existing collection deleted")
+        except Exception:
+            logger.info("No existing collection to delete")
+    except Exception as e:
+        logger.info(f"Could not clear collection: {e}")
 
     logger.info(
         "Embedding and storing in ChromaDB..."
