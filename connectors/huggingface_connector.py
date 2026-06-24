@@ -168,7 +168,7 @@ def run_huggingface_connector() -> list:
                 "source": "huggingface_servicenow"
             })
 
-            if len(tickets) >= 5000:
+            if len(tickets) >= 500:
                 break
 
         logger.info(

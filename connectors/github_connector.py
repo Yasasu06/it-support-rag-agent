@@ -39,28 +39,10 @@ REPOS = [
         "label": "bug"
     },
     {
-        "owner": "microsoft",
-        "repo": "vscode",
-        "category": "Software Access",
-        "label": "help wanted"
-    },
-    {
         "owner": "kubernetes",
         "repo": "kubernetes",
         "category": "Network",
         "label": "kind/bug"
-    },
-    {
-        "owner": "hashicorp",
-        "repo": "terraform",
-        "category": "Software Access",
-        "label": "bug"
-    },
-    {
-        "owner": "ansible",
-        "repo": "ansible",
-        "category": "Software Access",
-        "label": "bug"
     }
 ]
 
@@ -233,7 +215,7 @@ def run_github_connector() -> list:
             repo=repo_config["repo"],
             category=repo_config["category"],
             label=repo_config["label"],
-            max_issues=100
+            max_issues=20
         )
         logger.info(
             f"Got {len(tickets)} issues from "

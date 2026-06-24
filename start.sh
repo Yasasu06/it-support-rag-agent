@@ -34,8 +34,8 @@ except Exception as e:
 echo "ChromaDB currently has $CHROMA_COUNT documents"
 
 if [ "$CHROMA_COUNT" -lt "100" ]; then
-    echo "ChromaDB is empty or low. Running ingestion..."
-    /opt/venv/bin/python3 ingest_all.py
+    echo "ChromaDB is empty or low. Running ingestion with 8 minute timeout..."
+    timeout 480 /opt/venv/bin/python3 ingest_all.py || echo "Ingestion timed out or failed - starting app anyway with available data"
     echo "Ingestion complete."
 else
     echo "ChromaDB already populated. Skipping ingestion."
