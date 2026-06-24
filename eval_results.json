@@ -1,0 +1,194 @@
+{
+  "timestamp": "2026-06-23T20:08:36.148103",
+  "total_questions": 20,
+  "passed": 17,
+  "failed": 3,
+  "accuracy": 85.0,
+  "in_scope_correct": 13,
+  "in_scope_total": 16,
+  "out_of_scope_correct": 4,
+  "out_of_scope_total": 4,
+  "grade": "Good \u2014 minor improvements needed",
+  "results": [
+    {
+      "question": "My printer is not printing anything",
+      "expected_category": "Printer",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-031, the issue of a printer not printing anything could be related to a problem with the print spooler. In that case, the print jobs were stuck in the queue with an 'Error' status. The resolution involved clearing the stuck jobs and restarting the Print Spooler service. If your printer is not printing, you may want to check if there are any jobs stuck in the queue or if the Print Spooler service needs to be restarted. \n\nIf you need further assistance, please provide more details about your specific situation.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "I cannot access SAP after my account was locked",
+      "expected_category": "ERP Access",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-048, the issue of being unable to access SAP after an account was locked can occur if the account is flagged as dormant due to inactivity. In this case, the account was auto-locked by the dormancy policy after 90 days of inactivity. The resolution involved reactivating the SAP user in SU01, resetting the validity dates, and having the user log in and change their password to confirm access was restored. \n\nIf your account was locked for a similar reason, you may need to follow a similar process to regain access.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "Outlook keeps asking me to sign in repeatedly",
+      "expected_category": "Email",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-025, a similar issue involved a user's Outlook being stuck on 'Trying to connect...' which was resolved by recreating the Outlook profile. While the exact symptom of repeated sign-in requests is not directly mentioned, it may be related to profile issues. I recommend checking the Outlook profile settings or recreating the profile to resolve the issue. \n\nIf the problem persists, further investigation may be needed.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "My laptop screen went black and won't turn on",
+      "expected_category": "Hardware",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-019, a similar issue involved a laptop that would not power on and showed no response when plugged into the dock. The resolution involved isolating the fault to a failed dock power adapter and connecting the laptop directly to a known-good charger. After performing a battery-drain reset and replacing the faulty dock adapter, the laptop booted normally. \n\nWhile your issue specifically mentions a black screen, it may be related to power issues similar to those described in TKT-019. I recommend checking the power source and performing a battery-drain reset. \n\nIf the problem persists, further diagnostics may be necessary.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "I need access to Power BI for my team",
+      "expected_category": "Software Access",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-014, if you need access to Power BI for your team, ensure that the users have the appropriate licenses. In the case mentioned, a user had a Power BI Free license but required a Pro license to access the shared workspace. You may need to assign Power BI Pro licenses to your team members and ensure they are added to the appropriate workspaces.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "Network drive is not showing up on my computer",
+      "expected_category": "Network",
+      "should_answer": true,
+      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Refused",
+      "passed": false
+    },
+    {
+      "question": "I forgot my Windows password and am locked out",
+      "expected_category": "Password",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-007, if you forgot your Windows password and are locked out, the resolution involves verifying your identity and then resetting your Active Directory password. After the reset, you would be walked through setting a new password at your next logon to confirm you can sign in.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "VPN disconnects every few minutes while working from home",
+      "expected_category": "VPN",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-004, the issue of VPN disconnects every few minutes while working from home can be related to an aggressive idle-timeout on the user's consumer router. In this case, the resolution involved raising the dead-peer-detection interval on the VPN profile and advising the user to disable the router's Wi-Fi power-saving mode, which stabilized the session.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "Printer shows offline but is turned on",
+      "expected_category": "Printer",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-036, the issue of a printer showing offline while it is powered on can occur if the printer has picked up a new DHCP address while its print queue still points to the old IP. The resolution involved setting a DHCP reservation for the printer's MAC, updating the port on the print server to the new address, and confirming that the queue came back online for all users.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "I need SAP access for the new project I joined",
+      "expected_category": "ERP Access",
+      "should_answer": true,
+      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Refused",
+      "passed": false
+    },
+    {
+      "question": "My email signature is not showing in Outlook",
+      "expected_category": "Email",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-111, the issue of an email signature not showing in Outlook could be related to configuration settings. In that ticket, a standard branded signature template was applied through the central signature management tool. If your email signature is not showing, you may need to check if it has been configured correctly or if the central management tool needs to be used to apply the signature. \n\nIf you need further assistance, please let me know!",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "Computer is running very slowly after Windows update",
+      "expected_category": "Hardware",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-095, there was an issue where Bluetooth devices stopped working after a Windows update, which indicates that updates can cause performance issues. However, there is no specific resolution for a computer running slowly after a Windows update in the provided tickets. \n\nI don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Refused",
+      "passed": false
+    },
+    {
+      "question": "Cannot install Adobe Acrobat on my work laptop",
+      "expected_category": "Software Access",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-076, it appears that Adobe Acrobat can be deployed via SCCM. If you are having trouble installing Adobe Acrobat, it may be beneficial to check if you have the necessary permissions or if the software is available through the software portal. If you need further assistance, please provide more details about the issue you are encountering.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "WiFi keeps dropping in the conference room",
+      "expected_category": "Network",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-130, the issue of Wi-Fi dropping in the conference room could be related to inadequate coverage or interference. In that ticket, a Wi-Fi site survey was conducted to confirm adequate coverage, and testing was performed to ensure a stable connection before the room opened. If you are experiencing Wi-Fi drops, it may be beneficial to conduct a similar site survey to identify any coverage issues or interference in your conference room.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "Account locked after too many wrong password attempts",
+      "expected_category": "Password",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-067, the issue of an account being locked after too many wrong password attempts can be resolved by verifying the user's identity and resetting the relevant credentials. In this case, the executive's smart card PIN was locked after failed attempts, and the resolution involved reissuing a working smart card and resetting the PIN counter. \n\nIf you are experiencing a similar issue, it may be necessary to verify your identity and reset your credentials to regain access. \n\nTicket ID: TKT-067.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "AnyConnect shows login failed after password reset",
+      "expected_category": "VPN",
+      "should_answer": true,
+      "answer": "Based on Ticket ID: TKT-001, the issue of \"Login failed\" after entering credentials can be related to account lockouts due to repeated failed MFA prompts. In that case, the user's Active Directory account was locked, and unlocking the account resolved the issue. \n\nIf the \"login failed\" error after a password reset is due to a similar account lockout or MFA issue, it may require checking the account status in Active Directory or resetting the MFA device pairing. \n\nPlease check the account status to ensure it is not locked.",
+      "expected_behavior": "Answer",
+      "actual_behavior": "Answered",
+      "passed": true
+    },
+    {
+      "question": "What is the weather in Grand Rapids today?",
+      "expected_category": "Out of scope",
+      "should_answer": false,
+      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Refuse",
+      "actual_behavior": "Refused",
+      "passed": true
+    },
+    {
+      "question": "Who won the Super Bowl last year?",
+      "expected_category": "Out of scope",
+      "should_answer": false,
+      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Refuse",
+      "actual_behavior": "Refused",
+      "passed": true
+    },
+    {
+      "question": "Can you write me a poem?",
+      "expected_category": "Out of scope",
+      "should_answer": false,
+      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Refuse",
+      "actual_behavior": "Refused",
+      "passed": true
+    },
+    {
+      "question": "What is the capital of France?",
+      "expected_category": "Out of scope",
+      "should_answer": false,
+      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "expected_behavior": "Refuse",
+      "actual_behavior": "Refused",
+      "passed": true
+    }
+  ]
+}

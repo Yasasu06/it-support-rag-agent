@@ -1,0 +1,7 @@
+{
+    "ticket_id": "TKT-151",
+    "category": "VPN",
+    "issue": "Employee cannot connect to AnyConnect after IT migrated to new ASA firewall. Gets error code 403 on connection attempt.",
+    "resolution": "Updated the AnyConnect server address in the client profile from the old gateway IP to the new ASA hostname. Pushed updated profile via SCCM and confirmed successful connection. Advised user to always use hostname not IP for future resilience.",
+    "resolved_in_minutes": 28
+}

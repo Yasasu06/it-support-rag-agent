@@ -1,0 +1,14 @@
+.env
+venv/
+__pycache__/
+.DS_Store
+chroma_db/
+query_audit_log.jsonl
+finetune/training_data.jsonl
+finetune/validation_data.jsonl
+finetune/finetune_job.json
+finetune/finetuned_model.txt
+real_data/
+ingestion_summary.json
+scheduler_log.jsonl
+feedback_log.jsonl
