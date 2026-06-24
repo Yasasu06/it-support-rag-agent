@@ -20,6 +20,15 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets'):
+        for key, value in st.secrets.items():
+            if key not in os.environ:
+                os.environ[key] = str(value)
+except Exception:
+    pass
+
 # Presidio's AnalyzerEngine() defaults to the large spaCy model if no
 # nlp_engine is given. Pin to the small model explicitly so it matches what's
 # actually downloaded at startup (railway.toml), keeping memory usage down.

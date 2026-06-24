@@ -25,6 +25,16 @@ from langchain_core.runnables import RunnablePassthrough
 from langsmith import traceable
 from langsmith.wrappers import wrap_openai
 
+import os
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets'):
+        for key, value in st.secrets.items():
+            if key not in os.environ:
+                os.environ[key] = str(value)
+except Exception:
+    pass
+
 # Step 1: load environment variables (expects OPENAI_API_KEY in .env)
 load_dotenv()
 
@@ -95,7 +105,14 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
+_llm = None
+
+
+def _get_llm() -> ChatOpenAI:
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
+    return _llm
 
 
 def format_docs(docs) -> str:
@@ -113,7 +130,7 @@ def _get_rag_chain():
                 "question": RunnablePassthrough(),
             }
             | prompt
-            | llm
+            | _get_llm()
             | StrOutputParser()
         )
     return _rag_chain

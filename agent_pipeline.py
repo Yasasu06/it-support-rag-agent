@@ -27,6 +27,16 @@ from langsmith import traceable
 
 from security import is_safe_query, log_query, mask_pii
 
+import os
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets'):
+        for key, value in st.secrets.items():
+            if key not in os.environ:
+                os.environ[key] = str(value)
+except Exception:
+    pass
+
 load_dotenv()
 
 # Configuration -------------------------------------------------------------
