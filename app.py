@@ -374,52 +374,20 @@ st.markdown(
       box-shadow: 0 0 0 3px rgba(79,70,229,0.12) !important;
     }
 
-    /* Expander for source tickets */
-    [data-testid="stExpander"] {
+    /* Source tickets toggle button */
+    [class*="st-key-toggle_sources_"] button {
       background: #F8FAFC !important;
       border: 1px solid #E2E8F0 !important;
       border-radius: 10px !important;
-    }
-    [data-testid="stExpander"] details summary p {
-      font-size: 0.8rem !important;
       color: #64748B !important;
-      font-weight: 500 !important;
-    }
-    [data-testid="stExpander"] summary p {
       font-size: 0.8rem !important;
-      color: #64748B !important;
       font-weight: 500 !important;
+      font-family: 'Inter', sans-serif !important;
+      box-shadow: none !important;
     }
-    [data-testid="stExpander"] summary svg {
-      display: none !important;
-    }
-
-    /* Hide expander arrow artifacts */
-    [data-testid="stExpander"] summary {
-        list-style: none !important;
-    }
-    [data-testid="stExpander"] summary::-webkit-details-marker {
-        display: none !important;
-    }
-    [data-testid="stExpander"] details summary p {
-        font-size: 0.8rem !important;
-        color: #64748B !important;
-        font-weight: 500 !important;
-        font-family: 'Inter', sans-serif !important;
-    }
-    [data-testid="stExpander"] summary svg,
-    [data-testid="stExpander"] summary img {
-        display: none !important;
-    }
-    button[data-testid="baseButton-header"] svg {
-        display: none !important;
-    }
-    details summary > span {
-      display: none !important;
-    }
-    [data-testid="stExpander"] summary::marker {
-      display: none !important;
-      content: "" !important;
+    [class*="st-key-toggle_sources_"] button:hover {
+      border-color: #CBD5E1 !important;
+      color: #0F172A !important;
     }
 
     /* Spinner */
@@ -545,11 +513,17 @@ def render_quality_score(top_score: float) -> None:
     )
 
 
-def render_sources_expander(sources: list) -> None:
-    with st.expander(
-        f"Source tickets ({len(sources)} retrieved)",
-        expanded=False
-    ):
+def render_sources_expander(sources: list, msg_index) -> None:
+    state_key = f"show_sources_{msg_index}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = False
+
+    arrow = "▾" if st.session_state[state_key] else "▸"
+    label = f"{arrow} Source tickets ({len(sources)} retrieved)"
+    if st.button(label, key=f"toggle_sources_{msg_index}"):
+        st.session_state[state_key] = not st.session_state[state_key]
+
+    if st.session_state[state_key]:
         for src in sources:
             st.markdown(
                 f"""
@@ -612,7 +586,7 @@ def render_assistant_message(msg: dict, idx: int) -> None:
         if msg.get("escalation"):
             st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
         if msg.get("sources"):
-            render_sources_expander(msg["sources"])
+            render_sources_expander(msg["sources"], idx)
         if msg["content"] != ERROR_MESSAGE:
             render_feedback_buttons(msg.get("question", ""), msg["content"], str(idx))
 
@@ -700,7 +674,7 @@ def process_question(question: str, category: str) -> None:
             if escalation:
                 st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
             if sources:
-                render_sources_expander(sources)
+                render_sources_expander(sources, len(st.session_state.messages))
 
             st.session_state.messages.append(
                 {
