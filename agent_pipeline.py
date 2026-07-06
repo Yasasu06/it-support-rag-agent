@@ -333,6 +333,9 @@ class AgentState(TypedDict):
     escalation: Optional[bool]
     tier: Optional[str]
     confidence_score: Optional[float]
+    grounded: Optional[bool]
+    verification_notes: Optional[str]
+    escalation_reason: Optional[str]
 
 
 # Agent 1: Retrieval Agent ---------------------------------------------------
@@ -355,11 +358,90 @@ def answer_agent(state: AgentState) -> dict:
     return {"answer": answer}
 
 
-# Agent 3: Triage Agent --------------------------------------------------------
+# Agent 3: Verification Agent --------------------------------------------------
+@traceable(name="Verification Agent")
+def verification_agent(state: AgentState) -> AgentState:
+    """
+    Verifies that the generated answer is fully grounded in the retrieved
+    ticket context. Uses GPT-4o-mini as an independent judge to check for
+    unsupported claims. Sets state['grounded'] (bool) and
+    state['verification_notes'] (str).
+    """
+    answer = state.get("answer", "")
+    context = state.get("context", "")
+
+    if not answer or not context:
+        state["grounded"] = False
+        state["verification_notes"] = (
+            "Missing answer or context - cannot verify"
+        )
+        return state
+
+    llm = _get_chat_llm()
+
+    verification_prompt = (
+        "You are a strict fact-checker. Below is a "
+        "CONTEXT (source tickets) and an ANSWER "
+        "generated from that context. Your job is "
+        "to verify every factual claim in the ANSWER "
+        "is directly supported by the CONTEXT.\n\n"
+        f"CONTEXT:\n{context}\n\n"
+        f"ANSWER:\n{answer}\n\n"
+        "Respond in exactly this format:\n"
+        "GROUNDED: yes or no\n"
+        "REASON: one sentence explaining why\n\n"
+        "Mark GROUNDED: no only if the answer "
+        "contains a specific claim, fact, or "
+        "instruction that does NOT appear anywhere "
+        "in the context. Do not mark it no for "
+        "style or phrasing differences - only for "
+        "actual unsupported factual claims."
+    )
+
+    try:
+        response = llm.invoke(verification_prompt)
+        result_text = response.content.strip()
+
+        is_grounded = (
+            "GROUNDED: yes" in result_text
+            or "GROUNDED:yes" in result_text.lower()
+        )
+
+        reason_line = ""
+        for line in result_text.split("\n"):
+            if line.strip().upper().startswith("REASON"):
+                reason_line = line.split(":", 1)[-1].strip()
+                break
+
+        state["grounded"] = is_grounded
+        state["verification_notes"] = reason_line or "No reason provided"
+
+    except Exception as e:
+        # Fail safe: if verification itself fails, treat as ungrounded to
+        # force escalation rather than silently trusting an unverified answer.
+        state["grounded"] = False
+        state["verification_notes"] = (
+            f"Verification error: {str(e)} - defaulting to ungrounded for safety"
+        )
+
+    return state
+
+
+# Agent 4: Triage Agent --------------------------------------------------------
 @traceable(name="Triage Agent")
 def triage_agent(state: AgentState) -> dict:
     answer = state["answer"] or ""
     confidence_score = state["confidence_score"] or 0.0
+
+    if state.get("grounded") is False:
+        return {
+            "escalation": True,
+            "tier": "Tier 2",
+            "escalation_reason": (
+                "Answer failed groundedness verification: "
+                + state.get("verification_notes", "")
+            ),
+        }
 
     if "don't have information" in answer.lower():
         return {"escalation": True, "tier": "Tier 2"}
@@ -372,10 +454,12 @@ def triage_agent(state: AgentState) -> dict:
 workflow = StateGraph(AgentState)
 workflow.add_node("retrieval", retrieval_agent)
 workflow.add_node("answer", answer_agent)
+workflow.add_node("verification", verification_agent)
 workflow.add_node("triage", triage_agent)
 workflow.set_entry_point("retrieval")
 workflow.add_edge("retrieval", "answer")
-workflow.add_edge("answer", "triage")
+workflow.add_edge("answer", "verification")
+workflow.add_edge("verification", "triage")
 workflow.add_edge("triage", END)
 app_graph = workflow.compile()
 
@@ -395,6 +479,9 @@ def run_agent_pipeline(question: str) -> dict:
             "escalation": None,
             "tier": None,
             "confidence_score": None,
+            "grounded": None,
+            "verification_notes": None,
+            "escalation_reason": None,
         }
     )
 
@@ -418,6 +505,8 @@ def run_agent_pipeline(question: str) -> dict:
         "tier": result["tier"],
         "confidence_score": result["confidence_score"],
         "pii_detected": detected_pii,
+        "grounded": result.get("grounded", None),
+        "verification_notes": result.get("verification_notes", ""),
     }
 
 
