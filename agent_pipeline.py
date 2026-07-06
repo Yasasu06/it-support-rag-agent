@@ -12,6 +12,7 @@ Run directly to execute a small built-in test:
 """
 
 import re
+import time
 from typing import Optional, TypedDict
 
 from dotenv import load_dotenv
@@ -26,6 +27,7 @@ from langgraph.prebuilt import create_react_agent
 from langsmith import traceable
 
 from security import is_safe_query, log_query, mask_pii
+from live_eval import score_response_relevance, log_live_eval
 
 import os
 try:
@@ -471,6 +473,7 @@ def run_agent_pipeline(question: str) -> dict:
     safe, detected_pii = is_safe_query(question)
     pipeline_question = masked_question if detected_pii else question
 
+    start_time = time.time()
     result = app_graph.invoke(
         {
             "question": pipeline_question,
@@ -484,6 +487,7 @@ def run_agent_pipeline(question: str) -> dict:
             "escalation_reason": None,
         }
     )
+    latency = time.time() - start_time
 
     source_ticket_ids = re.findall(r"Ticket ID:\s*(TKT-\d+)", result["context"] or "")
     sources = [{"ticket_id": tid} for tid in source_ticket_ids]
@@ -498,6 +502,26 @@ def run_agent_pipeline(question: str) -> dict:
         pii_detected=detected_pii,
         sources=sources,
     )
+
+    try:
+        relevance = score_response_relevance(
+            question,
+            result.get("answer", ""),
+            _get_chat_llm,
+        )
+        log_live_eval(
+            question=question,
+            answer=result.get("answer", ""),
+            grounded=result.get("grounded"),
+            verification_notes=result.get("verification_notes", ""),
+            confidence_score=result.get("confidence_score", 0),
+            relevance_score=relevance,
+            escalation=result.get("escalation", False),
+            tier=result.get("tier", "Tier 1"),
+            latency_seconds=latency,
+        )
+    except Exception:
+        pass
 
     return {
         "answer": result["answer"],

@@ -32,6 +32,7 @@ from rag import (
 )
 from agent_pipeline import run_agent_pipeline, run_tool_agent
 from security import get_audit_summary
+from live_eval import get_live_eval_summary
 
 ANALYTICAL_KEYWORDS = [
     "how many", "count", "average",
@@ -1009,7 +1010,37 @@ with tab2:
 
     st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
 
-    # Section 4: Tech stack ---------------------------------------------------------
+    # Section 4: Live Evaluation Metrics --------------------------------------------
+    st.markdown("### Live Evaluation Metrics")
+    st.markdown(
+        "<p style='color:#64748B;font-size:0.85rem'>"
+        "Every production query is automatically scored in real time — "
+        "not just a fixed test set.</p>",
+        unsafe_allow_html=True,
+    )
+
+    live_stats = get_live_eval_summary()
+    if live_stats["total_scored"] > 0:
+        lc1, lc2, lc3, lc4 = st.columns(4)
+        with lc1:
+            st.metric("Queries Scored", live_stats["total_scored"])
+        with lc2:
+            st.metric("Grounded Rate", f"{live_stats['grounded_rate']:.0%}")
+        with lc3:
+            st.metric("Avg Relevance", f"{live_stats['avg_relevance']:.0%}")
+        with lc4:
+            st.metric("Avg Latency", f"{live_stats['avg_latency']:.1f}s")
+    else:
+        st.markdown(
+            "<p style='color:#94A3B8;font-size:0.8rem'>"
+            "No queries scored yet. Ask a question in the Chat tab to see "
+            "live metrics appear here.</p>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
+
+    # Section 5: Tech stack ---------------------------------------------------------
     st.markdown("### Tech Stack")
 
     st.markdown("""
