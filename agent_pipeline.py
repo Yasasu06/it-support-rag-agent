@@ -384,6 +384,22 @@ class AgentState(TypedDict):
     escalation_reason: Optional[str]
     retry_count: Optional[int]
     retry_history: Optional[list]
+    retrieved_sources: Optional[list]
+
+
+def _parse_doc_to_source(doc, score: float) -> dict:
+    content = doc.page_content
+    meta = doc.metadata
+    issue_m = re.search(r"\| Issue: (.*?) \| Resolution:", content, re.DOTALL)
+    resolution_m = re.search(r"\| Resolution: (.*?) \| Resolved in:", content, re.DOTALL)
+    return {
+        "ticket_id": meta.get("ticket_id", ""),
+        "category": meta.get("category", ""),
+        "issue": issue_m.group(1).strip() if issue_m else "",
+        "resolution": resolution_m.group(1).strip() if resolution_m else "",
+        "resolved_in_minutes": meta.get("resolved_in_minutes", 30),
+        "score": score,
+    }
 
 
 def broaden_query(
@@ -454,10 +470,12 @@ def retrieval_agent(state: AgentState) -> dict:
     )
     context = "\n\n".join(doc.page_content for doc, _ in results)
     top_score = results[0][1] if results else 0.0
+    retrieved_sources = [_parse_doc_to_source(doc, score) for doc, score in results]
     return {
         "context": context,
         "confidence_score": top_score,
         "retry_history": retry_history,
+        "retrieved_sources": retrieved_sources,
     }
 
 
@@ -684,6 +702,7 @@ def run_agent_pipeline(question: str) -> dict:
         "verification_notes": result.get("verification_notes", ""),
         "retry_count": result.get("retry_count", 0),
         "retry_history": result.get("retry_history", []),
+        "sources": result.get("retrieved_sources", []),
     }
 
 
