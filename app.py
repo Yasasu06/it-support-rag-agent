@@ -44,6 +44,9 @@ ANALYTICAL_KEYWORDS = [
     "most common", "breakdown", "summary",
     "how long", "resolution time", "sla",
     "trend", "compare", "analysis",
+    "servicenow", "live status", "current status",
+    "connection status", "is servicenow",
+    "servicenow working", "servicenow connected",
 ]
 
 
@@ -662,7 +665,8 @@ def process_question(question: str, category: str) -> None:
                     sources, top_score = [], result["confidence_score"]
                 else:
                     result = run_agent_pipeline(augmented_question)
-                    sources, top_score = get_sources_and_top_score(augmented_question, category)
+                    sources = result.get("sources", [])
+                    top_score = result.get("confidence_score") or 0.0
 
                 answer = result["answer"]
                 escalation = result["escalation"]
@@ -940,38 +944,51 @@ with tab2:
     st.markdown("### Multi-Agent Pipeline")
     st.markdown(
         "<p style='color:#64748B;font-size:0.85rem;margin-bottom:1rem'>Every query flows through "
-        "a LangGraph orchestrated three-agent pipeline before returning an answer.</p>",
+        "a LangGraph orchestrated four-agent pipeline before returning an answer. "
+        "Adaptive retry broadens the query and reruns the full pipeline up to 2×.</p>",
         unsafe_allow_html=True,
     )
 
     st.markdown("""
-    <div style="display:flex;gap:0;align-items:stretch;margin-bottom:1.5rem">
+    <div style="display:flex;gap:0;align-items:stretch;margin-bottom:0.75rem">
 
-      <div style="flex:1;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px 0 0 10px;padding:1.25rem">
-        <div style="font-weight:700;font-size:0.85rem;color:#3730A3;margin-bottom:0.25rem">Retrieval Agent</div>
-        <div style="font-size:0.75rem;color:#4338CA;line-height:1.5">
-        Searches ChromaDB using semantic similarity. Returns top 3 most relevant tickets with confidence scores.</div>
-        <div style="margin-top:0.75rem;font-size:0.7rem;color:#6366F1;font-weight:500">LangChain · ChromaDB · OpenAI Embeddings</div>
+      <div style="flex:1;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px 0 0 10px;padding:1rem">
+        <div style="font-weight:700;font-size:0.82rem;color:#3730A3;margin-bottom:0.25rem">Retrieval Agent</div>
+        <div style="font-size:0.72rem;color:#4338CA;line-height:1.5">
+        Searches ChromaDB via semantic similarity. Returns top 3 tickets with scores. Broadens query on retry.</div>
+        <div style="margin-top:0.6rem;font-size:0.68rem;color:#6366F1;font-weight:500">ChromaDB · OpenAI Embeddings</div>
       </div>
 
-      <div style="display:flex;align-items:center;padding:0 0.5rem;color:#CBD5E1;font-size:1.5rem">→</div>
+      <div style="display:flex;align-items:center;padding:0 0.35rem;color:#CBD5E1;font-size:1.3rem">→</div>
 
-      <div style="flex:1;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:0;padding:1.25rem">
-        <div style="font-weight:700;font-size:0.85rem;color:#166534;margin-bottom:0.25rem">Answer Agent</div>
-        <div style="font-size:0.75rem;color:#15803D;line-height:1.5">
+      <div style="flex:1;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:0;padding:1rem">
+        <div style="font-weight:700;font-size:0.82rem;color:#166534;margin-bottom:0.25rem">Answer Agent</div>
+        <div style="font-size:0.72rem;color:#15803D;line-height:1.5">
         Generates grounded answer using retrieved context only. Cites Ticket IDs. Refuses out-of-scope questions.</div>
-        <div style="margin-top:0.75rem;font-size:0.7rem;color:#16A34A;font-weight:500">GPT-4o-mini · RAG grounding · Citation</div>
+        <div style="margin-top:0.6rem;font-size:0.68rem;color:#16A34A;font-weight:500">GPT-4o-mini · RAG grounding</div>
       </div>
 
-      <div style="display:flex;align-items:center;padding:0 0.5rem;color:#CBD5E1;font-size:1.5rem">→</div>
+      <div style="display:flex;align-items:center;padding:0 0.35rem;color:#CBD5E1;font-size:1.3rem">→</div>
 
-      <div style="flex:1;background:#FFFBEB;border:1px solid #FDE68A;border-radius:0 10px 10px 0;padding:1.25rem">
-        <div style="font-weight:700;font-size:0.85rem;color:#92400E;margin-bottom:0.25rem">Triage Agent</div>
-        <div style="font-size:0.75rem;color:#B45309;line-height:1.5">
-        Evaluates confidence score. Routes to Tier 1 or Tier 2 escalation. Flags low-confidence responses automatically.</div>
-        <div style="margin-top:0.75rem;font-size:0.7rem;color:#D97706;font-weight:500">LangGraph · Confidence threshold · Auto-routing</div>
+      <div style="flex:1;background:#FFF1F2;border:1px solid #FECDD3;border-radius:0;padding:1rem">
+        <div style="font-weight:700;font-size:0.82rem;color:#9F1239;margin-bottom:0.25rem">Verification Agent</div>
+        <div style="font-size:0.72rem;color:#BE123C;line-height:1.5">
+        Independent LLM fact-checks every answer against source tickets. Flags hallucinated claims for retry.</div>
+        <div style="margin-top:0.6rem;font-size:0.68rem;color:#E11D48;font-weight:500">GPT-4o-mini judge · Groundedness</div>
       </div>
 
+      <div style="display:flex;align-items:center;padding:0 0.35rem;color:#CBD5E1;font-size:1.3rem">→</div>
+
+      <div style="flex:1;background:#FFFBEB;border:1px solid #FDE68A;border-radius:0 10px 10px 0;padding:1rem">
+        <div style="font-weight:700;font-size:0.82rem;color:#92400E;margin-bottom:0.25rem">Triage Agent</div>
+        <div style="font-size:0.72rem;color:#B45309;line-height:1.5">
+        Evaluates confidence score and groundedness. Routes to Tier 1 or Tier 2 escalation automatically.</div>
+        <div style="margin-top:0.6rem;font-size:0.68rem;color:#D97706;font-weight:500">LangGraph · Auto-routing</div>
+      </div>
+
+    </div>
+    <div style="font-size:0.72rem;color:#94A3B8;margin-bottom:1.5rem">
+    ↩ Adaptive retry: if verification fails or confidence is low, a broadened query reruns the pipeline (max 2 retries).
     </div>
     """, unsafe_allow_html=True)
 
@@ -991,9 +1008,9 @@ with tab2:
     with pf_row1_col2:
         st.markdown("""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
-        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">LangSmith Evaluation</div>
+        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Live Evaluation</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        85% accuracy on 20-question test suite. 100% out-of-scope refusal rate. Every query traced and logged.</div>
+        Every production query scored in real time: relevance, groundedness, and latency. Metrics visible in System tab.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1012,7 +1029,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Multi-source Pipeline</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Connectors for Kaggle and GitHub Issues. Normalization layer handles schema differences automatically.</div>
+        Connectors for Kaggle, GitHub Issues, HuggingFace, and live ServiceNow REST API. Normalization handles schema differences.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1031,6 +1048,34 @@ with tab2:
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Fine-tuning Pipeline</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
         120-example training dataset prepared. Pipeline built and validated. Pending OpenAI RFT access for deployment.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    pf_row3_col1, pf_row3_col2, pf_row3_col3 = st.columns(3)
+    with pf_row3_col1:
+        st.markdown("""
+        <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
+        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Answer Verification</div>
+        <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
+        Independent GPT-4o-mini judge verifies every answer against source tickets before delivery. Flags hallucinated claims.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with pf_row3_col2:
+        st.markdown("""
+        <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
+        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Adaptive Retry</div>
+        <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
+        On failed verification or low confidence, query is automatically broadened and the full pipeline reruns (up to 2 retries).</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with pf_row3_col3:
+        st.markdown("""
+        <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
+        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">ServiceNow Live</div>
+        <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
+        Real-time REST API connection to ServiceNow. Live incident counts and connection status checked on every query.</div>
         </div>
         """, unsafe_allow_html=True)
 
