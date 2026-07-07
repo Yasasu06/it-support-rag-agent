@@ -173,7 +173,8 @@ def normalize_all_sources(
     synthetic_tickets: list,
     kaggle_tickets: list,
     github_tickets: list,
-    huggingface_tickets: list = []
+    huggingface_tickets: list = [],
+    servicenow_tickets: list = [],
 ) -> list:
     all_normalized = []
     seen_issues = set()
@@ -182,7 +183,8 @@ def normalize_all_sources(
         f"Normalizing: {len(synthetic_tickets)} "
         f"synthetic + {len(kaggle_tickets)} Kaggle "
         f"+ {len(github_tickets)} GitHub "
-        f"+ {len(huggingface_tickets)} HuggingFace"
+        f"+ {len(huggingface_tickets)} HuggingFace "
+        f"+ {len(servicenow_tickets)} ServiceNow"
     )
 
     for idx, ticket in enumerate(synthetic_tickets):
@@ -220,6 +222,16 @@ def normalize_all_sources(
     for idx, ticket in enumerate(huggingface_tickets):
         normalized = normalize_ticket(
             ticket, idx, "huggingface"
+        )
+        if normalized:
+            issue_key = normalized["issue"][:100]
+            if issue_key not in seen_issues:
+                seen_issues.add(issue_key)
+                all_normalized.append(normalized)
+
+    for idx, ticket in enumerate(servicenow_tickets):
+        normalized = normalize_ticket(
+            ticket, idx, "servicenow_live"
         )
         if normalized:
             issue_key = normalized["issue"][:100]

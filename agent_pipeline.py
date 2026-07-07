@@ -28,6 +28,11 @@ from langsmith import traceable
 
 from security import is_safe_query, log_query, mask_pii
 from live_eval import score_response_relevance, log_live_eval
+from connectors.servicenow_connector import (
+    is_configured as servicenow_configured,
+    live_incident_count_by_state,
+    test_connection as servicenow_test_connection,
+)
 
 import os
 try:
@@ -250,10 +255,49 @@ def get_resolution_time_stats(category: str = "all") -> str:
         return f"Stats error: {str(e)}"
 
 
+@tool
+def check_live_servicenow_status() -> str:
+    """
+    Checks the CURRENT real-time status of the live ServiceNow instance —
+    not cached or batch data. Use this when the user asks about "current",
+    "right now", or "live" incident status, or asks to verify the
+    ServiceNow connection is working.
+    """
+    if not servicenow_configured():
+        return (
+            "ServiceNow live connection is not configured. "
+            "This system currently relies on batch-ingested data only."
+        )
+
+    connection_result = servicenow_test_connection()
+    if not connection_result["success"]:
+        return (
+            f"ServiceNow connection exists but failed: "
+            f"{connection_result['message']}"
+        )
+
+    state_counts = live_incident_count_by_state()
+    if not state_counts:
+        return (
+            "Connected to ServiceNow live instance but could not "
+            "retrieve current incident counts."
+        )
+
+    summary_lines = [
+        f"State {state}: {count} incidents"
+        for state, count in state_counts.items()
+    ]
+    return (
+        "Live ServiceNow status (real-time, not cached):\n"
+        + "\n".join(summary_lines)
+    )
+
+
 TOOLS = [
     search_tickets_by_category,
     count_tickets_by_category,
     get_resolution_time_stats,
+    check_live_servicenow_status,
 ]
 
 TOOL_AGENT_SYSTEM_PROMPT = (

@@ -35,6 +35,10 @@ from connectors.github_connector import (
 from connectors.huggingface_connector import (
     run_huggingface_connector
 )
+from connectors.servicenow_connector import (
+    is_configured as servicenow_configured,
+    fetch_incidents_batch as fetch_servicenow_batch,
+)
 from normalize import normalize_all_sources
 
 CHROMA_DIR = os.getenv(
@@ -92,12 +96,32 @@ def run_multi_source_ingest():
         )
         hf_tickets = []
 
+    logger.info(
+        "Source 5: Fetching live ServiceNow data..."
+    )
+    servicenow_tickets = []
+    if servicenow_configured():
+        try:
+            servicenow_tickets = fetch_servicenow_batch(limit=200)
+            logger.info(
+                f"ServiceNow: {len(servicenow_tickets)} tickets"
+            )
+        except Exception as e:
+            logger.error(f"ServiceNow connector failed: {e}")
+            servicenow_tickets = []
+    else:
+        logger.info(
+            "ServiceNow not configured - skipping "
+            "(this is fine, other sources continue)"
+        )
+
     logger.info("Normalizing all sources...")
     all_tickets = normalize_all_sources(
         SYNTHETIC_TICKETS,
         kaggle_tickets,
         github_tickets,
-        hf_tickets
+        hf_tickets,
+        servicenow_tickets,
     )
 
     logger.info(
@@ -190,6 +214,8 @@ def run_multi_source_ingest():
                 f"{len(github_tickets)}")
     logger.info(f"HuggingFace tickets: "
                 f"{len(hf_tickets)}")
+    logger.info(f"ServiceNow tickets: "
+                f"{len(servicenow_tickets)}")
     logger.info(f"Total in ChromaDB: {final_count}")
     logger.info("=" * 60)
 
@@ -198,6 +224,7 @@ def run_multi_source_ingest():
         "kaggle": len(kaggle_tickets),
         "github": len(github_tickets),
         "huggingface": len(hf_tickets),
+        "servicenow": len(servicenow_tickets),
         "total": final_count
     }
 

@@ -33,6 +33,10 @@ from rag import (
 from agent_pipeline import run_agent_pipeline, run_tool_agent
 from security import get_audit_summary
 from live_eval import get_live_eval_summary
+from connectors.servicenow_connector import (
+    is_configured as servicenow_configured,
+    test_connection as servicenow_test_connection,
+)
 
 ANALYTICAL_KEYWORDS = [
     "how many", "count", "average",
@@ -867,7 +871,19 @@ with tab2:
     else:
         _ing = {"synthetic": 150, "kaggle": 0, "github": 0, "huggingface": 0, "total": 150}
 
-    ds_col1, ds_col2, ds_col3, ds_col4 = st.columns(4)
+    _sn_configured = servicenow_configured()
+    _sn_status = "Not configured"
+    _sn_color = "#94A3B8"
+    if _sn_configured:
+        _sn_result = servicenow_test_connection()
+        if _sn_result["success"]:
+            _sn_status = "Live — Connected"
+            _sn_color = "#10B981"
+        else:
+            _sn_status = "Configured — Connection Failed"
+            _sn_color = "#EF4444"
+
+    ds_col1, ds_col2, ds_col3, ds_col4, ds_col5 = st.columns(5)
     with ds_col1:
         st.markdown(f"""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #4F46E5;border-radius:10px;padding:1.25rem">
@@ -905,6 +921,16 @@ with tab2:
         <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing.get('huggingface', 0)}</div>
         <div style="font-size:0.75rem;color:#64748B">Synthetic ServiceNow incidents</div>
         <div style="margin-top:0.75rem;font-size:0.72rem;color:#8B5CF6;font-weight:500">ITSM schema · Structured fields</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with ds_col5:
+        st.markdown(f"""
+        <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #0EA5E9;border-radius:10px;padding:1.25rem">
+        <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">ServiceNow Live</div>
+        <div style="font-size:1rem;font-weight:700;color:{_sn_color};margin:0.5rem 0">{_sn_status}</div>
+        <div style="font-size:0.75rem;color:#64748B">Real-time connection, not batch</div>
+        <div style="margin-top:0.75rem;font-size:0.72rem;color:#0EA5E9;font-weight:500">REST API · Live incidents</div>
         </div>
         """, unsafe_allow_html=True)
 
