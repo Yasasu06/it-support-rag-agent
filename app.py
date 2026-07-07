@@ -203,6 +203,22 @@ st.markdown(
     /* Global reset */
     * { font-family: 'Inter', sans-serif !important; }
 
+    /* Restore Material Symbols icon font. The wildcard rule above would
+       otherwise force 'Inter' onto Streamlit's ligature icon spans, so the
+       icon's glyph name (e.g. "keyboard_double_arrow_left" for the sidebar
+       collapse control) renders as visible text instead of the glyph.
+       [data-testid="stIconMaterial"] out-specifies the '*' selector, so this
+       wins even against the !important above. */
+    [data-testid="stIconMaterial"],
+    span[data-testid="stIconMaterial"],
+    .material-icons,
+    .material-icons-outlined,
+    .material-symbols-rounded,
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+                   'Material Icons' !important;
+    }
+
     /* Hide Streamlit default chrome */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
