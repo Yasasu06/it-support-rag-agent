@@ -338,17 +338,83 @@ class AgentState(TypedDict):
     grounded: Optional[bool]
     verification_notes: Optional[str]
     escalation_reason: Optional[str]
+    retry_count: Optional[int]
+    retry_history: Optional[list]
+
+
+def broaden_query(
+    original_question: str,
+    attempt_number: int,
+    llm_getter,
+) -> str:
+    """
+    Generates a broader or differently-phrased version of the question for
+    a retry attempt.  attempt_number determines the strategy:
+      1 = rephrase with synonyms and broader terms
+      2 = strip to core category/keyword only
+    Fail-safe: returns original question unchanged if broadening fails.
+    """
+    try:
+        llm = llm_getter()
+
+        if attempt_number == 1:
+            prompt = (
+                "Rewrite this IT support question "
+                "using broader, more general terms "
+                "and common synonyms so it matches "
+                "more possible ticket descriptions. "
+                "Keep it under 15 words. Return "
+                "ONLY the rewritten question.\n\n"
+                f"Original: {original_question}"
+            )
+        else:
+            prompt = (
+                "Extract just the core IT category "
+                "and problem type from this question "
+                "in 3-6 words, removing all specific "
+                "details. Return ONLY those words.\n\n"
+                f"Original: {original_question}"
+            )
+
+        response = llm.invoke(prompt)
+        broadened = response.content.strip()
+
+        if len(broadened) < 3:
+            return original_question
+        return broadened
+
+    except Exception:
+        return original_question
 
 
 # Agent 1: Retrieval Agent ---------------------------------------------------
 @traceable(name="Retrieval Agent")
 def retrieval_agent(state: AgentState) -> dict:
+    retry_count = state.get("retry_count", 0)
+    search_question = state.get("question", "")
+
+    retry_history = list(state.get("retry_history") or [])
+    if retry_count > 0:
+        search_question = broaden_query(
+            state.get("question", ""),
+            retry_count,
+            _get_chat_llm,
+        )
+        retry_history.append({
+            "attempt": retry_count,
+            "query_used": search_question,
+        })
+
     results = _get_vectorstore().similarity_search_with_relevance_scores(
-        state["question"], k=TOP_K
+        search_question, k=TOP_K
     )
     context = "\n\n".join(doc.page_content for doc, _ in results)
     top_score = results[0][1] if results else 0.0
-    return {"context": context, "confidence_score": top_score}
+    return {
+        "context": context,
+        "confidence_score": top_score,
+        "retry_history": retry_history,
+    }
 
 
 # Agent 2: Answer Agent -------------------------------------------------------
@@ -452,17 +518,55 @@ def triage_agent(state: AgentState) -> dict:
     return {"escalation": False, "tier": "Tier 1"}
 
 
+def retry_decision(state: AgentState) -> str:
+    """
+    Conditional edge function — decides whether to retry retrieval or end.
+    Returns "retry" or "end" as a routing key.
+    Retries up to 2 times (retry_count 0→1, 1→2) only if the answer
+    failed grounding or escalation was triggered and retries remain.
+    Pure routing: no state mutation (state mutation is handled by
+    prepare_retry node so LangGraph reliably propagates the update).
+    """
+    retry_count = state.get("retry_count", 0)
+    grounded = state.get("grounded")
+    escalation = state.get("escalation", False)
+
+    should_retry = (
+        (grounded is False or escalation is True)
+        and retry_count < 2
+    )
+    return "retry" if should_retry else "end"
+
+
+def prepare_retry(state: AgentState) -> dict:
+    """
+    Increments retry_count before looping back to retrieval.
+    Using a real node (not the conditional edge function) guarantees
+    LangGraph merges the state update before retrieval_agent runs.
+    """
+    return {"retry_count": (state.get("retry_count") or 0) + 1}
+
+
 # Build the LangGraph workflow -------------------------------------------------
 workflow = StateGraph(AgentState)
 workflow.add_node("retrieval", retrieval_agent)
 workflow.add_node("answer", answer_agent)
 workflow.add_node("verification", verification_agent)
 workflow.add_node("triage", triage_agent)
+workflow.add_node("prepare_retry", prepare_retry)
 workflow.set_entry_point("retrieval")
 workflow.add_edge("retrieval", "answer")
 workflow.add_edge("answer", "verification")
 workflow.add_edge("verification", "triage")
-workflow.add_edge("triage", END)
+workflow.add_conditional_edges(
+    "triage",
+    retry_decision,
+    {
+        "retry": "prepare_retry",
+        "end": END,
+    },
+)
+workflow.add_edge("prepare_retry", "retrieval")
 app_graph = workflow.compile()
 
 
@@ -485,7 +589,10 @@ def run_agent_pipeline(question: str) -> dict:
             "grounded": None,
             "verification_notes": None,
             "escalation_reason": None,
-        }
+            "retry_count": 0,
+            "retry_history": [],
+        },
+        config={"recursion_limit": 20},
     )
     latency = time.time() - start_time
 
@@ -531,6 +638,8 @@ def run_agent_pipeline(question: str) -> dict:
         "pii_detected": detected_pii,
         "grounded": result.get("grounded", None),
         "verification_notes": result.get("verification_notes", ""),
+        "retry_count": result.get("retry_count", 0),
+        "retry_history": result.get("retry_history", []),
     }
 
 
