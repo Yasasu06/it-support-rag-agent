@@ -191,6 +191,28 @@ Similarity scores from this ChromaDB configuration top out around 0.32 for corre
 
 ---
 
+## Known Tradeoffs & Production Considerations
+
+Deliberate engineering decisions and prioritized gaps — documented for
+transparency rather than hidden. Full rationale for the vector-store decision
+lives in [DECISIONS.md](DECISIONS.md).
+
+- **Vector store is pre-built and committed to git** (see [DECISIONS.md](DECISIONS.md))
+  rather than rebuilt from a Railway persistent volume. This guarantees the
+  deployed app always has data within Railway's cold-start window, at the cost
+  of shipping an ~11MB binary in version control. Migrating to a persistent
+  volume with conditional re-ingestion is the planned proper fix.
+- **No CI/CD pipeline yet.** Tests and validation are run manually before each
+  push. Adding GitHub Actions to gate merges is a straightforward next step,
+  deprioritized behind feature work.
+- **No unified automated test suite.** Integration-style test scripts exist per
+  feature (`test_verification_agent.py`, `test_live_eval.py`,
+  `test_retry_loop.py`, `test_servicenow_connector.py`) and are run directly,
+  rather than being consolidated under a single pytest runner with shared
+  fixtures and coverage reporting.
+
+---
+
 ## Built By
 
 **Yasaswi**
