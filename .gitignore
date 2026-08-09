@@ -14,3 +14,10 @@ feedback_log.jsonl
 live_eval_log.jsonl
 .streamlit/secrets.toml
 chroma_db/
+
+# Additional hygiene
+*.pyc
+.env.local
+*.egg-info/
+.pytest_cache/
+finetune/*.jsonl
