@@ -21,3 +21,6 @@ chroma_db/
 *.egg-info/
 .pytest_cache/
 finetune/*.jsonl
+
+# Generated evaluation artifacts
+eval_harness/harness_results.json
