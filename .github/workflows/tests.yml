@@ -1,0 +1,51 @@
+# CI: fast unit tests on every push / PR to main.
+#
+# Design decision — this workflow runs ONLY the fast unit tests
+# (test_normalize, test_security, test_routing_logic, test_retry_decision).
+# It deliberately does NOT run tests/test_integration.py, because those tests
+# make real OpenAI API calls. Running them in CI would require exposing
+# OPENAI_API_KEY as a GitHub Actions secret and would incur real API cost on
+# every push. Skipping them here is a common, reasonable real-world tradeoff:
+# the fast suite gates every change at zero cost, while the integration tests
+# are run locally (where a .env key is present) before release.
+#
+# Note: security.py loads the spaCy `en_core_web_sm` model at import, and every
+# fast test transitively imports it, so the model is downloaded explicitly
+# below (it is not a pip dependency in requirements.txt).
+
+name: Run Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-mock
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Run fast unit tests (no API key required)
+        run: |
+          python -m pytest tests/test_normalize.py tests/test_security.py tests/test_routing_logic.py tests/test_retry_decision.py -v
+
+      - name: Report test summary
+        if: always()
+        run: |
+          echo "Fast unit tests completed - these run on every push with zero API cost"
