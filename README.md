@@ -1,5 +1,7 @@
 # Enterprise IT Support AI Assistant
 
+![Tests](https://github.com/Yasasu06/it-support-rag-agent/actions/workflows/tests.yml/badge.svg)
+
 A production-grade AI system that answers enterprise IT support questions by retrieving and citing real historical incidents — built with Retrieval-Augmented Generation (RAG), a three-agent LangGraph pipeline, and a knowledge base assembled from four independent real-world and synthetic data sources.
 
 Built to demonstrate Forward Deployed Engineer and Solutions Engineer capabilities for enterprise AI deployment.
@@ -172,6 +174,40 @@ python3 ingest_all.py
 # Run the app
 streamlit run app.py
 ```
+
+---
+
+## Testing
+
+The project has a pytest suite split into fast unit tests (no API key, no
+network) and slower integration tests (real end-to-end pipeline).
+
+```bash
+# Run the full suite (fast unit tests + integration tests).
+# Integration tests run only if OPENAI_API_KEY is available (from your .env);
+# otherwise they skip automatically.
+python -m pytest tests/ -v
+
+# Run only the fast unit tests — no API key needed, completes in ~2 seconds.
+python -m pytest tests/ -v --ignore=tests/test_integration.py
+```
+
+**Fast unit tests** (`test_normalize.py`, `test_security.py`,
+`test_routing_logic.py`, `test_retry_decision.py`) cover validity filtering,
+category inference, deduplication, PII masking, audit logging, query routing,
+and the retry-decision logic — all with zero API cost.
+
+**Integration tests** (`test_integration.py`) exercise the real RAG and
+multi-agent pipelines against OpenAI and are marked so they can be excluded
+with `-m "not integration"`.
+
+### Continuous Integration
+
+A [GitHub Actions workflow](.github/workflows/tests.yml) runs the fast unit
+tests automatically on every push and pull request to `main`. Integration
+tests are intentionally excluded from CI to avoid exposing an API key as a
+secret and incurring per-push API cost — a deliberate tradeoff documented in
+the workflow file.
 
 ---
 

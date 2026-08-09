@@ -20,3 +20,5 @@ tqdm
 schedule
 datasets
 huggingface_hub
+pytest
+pytest-mock
