@@ -211,6 +211,43 @@ the workflow file.
 
 ---
 
+## Evaluation Harness
+
+Beyond pass/fail accuracy, the project ships a structured evaluation harness
+(`eval_harness/`) that scores every answer on **five independent dimensions**,
+so a run reveals *where* the system is weak rather than just whether it passed:
+
+| Dimension | Type | What it measures |
+|-----------|------|------------------|
+| **Groundedness** | LLM judge | Is every claim in the answer supported by retrieved context? |
+| **Relevance** | LLM judge | Does the answer actually address the question asked? |
+| **Citation accuracy** | Pure logic | Does every cited Ticket ID appear in the retrieved sources? |
+| **Refusal correctness** | Pure logic | Did it answer in-scope questions and refuse out-of-scope ones? |
+| **Latency** | Pure logic | Response time against a chat-interface threshold |
+
+Scoring each quality separately catches failure modes a single score hides —
+e.g. an answer can be perfectly grounded yet irrelevant (answering a different
+question with real ticket data), and citation accuracy independently guards
+against citing a Ticket ID that was never retrieved.
+
+```bash
+# Run the full harness (multiple LLM calls per question — takes a few minutes)
+python3 eval_harness/runner.py
+
+# Compare two runs (e.g. before/after a change) to see improvements/regressions
+python3 eval_harness/compare_runs.py old.json new.json
+```
+
+Each run writes a timestamped `eval_harness/harness_results.json` with
+per-dimension averages plus full per-question detail.
+
+This is **separate from the always-on live evaluation** (`live_eval.py`), which
+scores real production queries continuously as they happen. The harness is for
+deliberate, structured test runs against a fixed question set — the kind you run
+before and after a change to measure impact.
+
+---
+
 ## Key Design Decisions
 
 **Why RAG over fine-tuning?**
