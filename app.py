@@ -40,6 +40,11 @@ from image_processing import (
     extract_text_from_image,
     build_combined_query,
 )
+from rate_limiter import check_rate_limit, get_rate_limit_status
+
+import logging
+
+logger = logging.getLogger(__name__)
 from connectors.servicenow_connector import (
     is_configured as servicenow_configured,
     test_connection as servicenow_test_connection,
@@ -876,6 +881,20 @@ with st.sidebar:
             st.metric("PII Caught", summary["pii_queries"])
             st.metric("Avg Conf", f"{summary['avg_confidence']:.0%}")
 
+    # Rate-limit usage indicator (transparency, not enforcement) — helps a user
+    # see they're approaching the limit rather than being surprised by a block.
+    if config.ENABLE_RATE_LIMITING:
+        _rl = get_rate_limit_status(
+            max_requests=config.RATE_LIMIT_MAX_REQUESTS,
+            window_seconds=config.RATE_LIMIT_WINDOW_SECONDS,
+        )
+        st.markdown(
+            f"<p style='color:#64748B;font-size:0.72rem;margin-top:0.75rem'>"
+            f"Requests: {_rl['used']}/{_rl['limit']} in the last "
+            f"{_rl['window_seconds']}s</p>",
+            unsafe_allow_html=True,
+        )
+
     st.markdown("<div style='height:2rem'></div>", unsafe_allow_html=True)
     st.markdown(
         "<p style='color:#475569;"
@@ -935,6 +954,15 @@ with tab1:
     if "prefill" in st.session_state and st.session_state.prefill:
         pending = st.session_state.prefill
         st.session_state.prefill = None
+        # Suggestion chips also trigger a full pipeline call — rate limit them too.
+        if config.ENABLE_RATE_LIMITING:
+            allowed, rl_error = check_rate_limit(
+                max_requests=config.RATE_LIMIT_MAX_REQUESTS,
+                window_seconds=config.RATE_LIMIT_WINDOW_SECONDS,
+            )
+            if not allowed:
+                st.warning(rl_error)
+                st.stop()
         process_question(pending, category)
         st.rerun()
 
@@ -949,6 +977,18 @@ with tab1:
         submit_text = None
 
     if submit_text is not None:
+        # Rate limit FIRST — before ANY OpenAI usage (image vision extraction or
+        # the RAG pipeline), so abuse is blocked before it can incur cost. This
+        # single gate covers both the typed and image-upload submission paths.
+        if config.ENABLE_RATE_LIMITING:
+            allowed, rl_error = check_rate_limit(
+                max_requests=config.RATE_LIMIT_MAX_REQUESTS,
+                window_seconds=config.RATE_LIMIT_WINDOW_SECONDS,
+            )
+            if not allowed:
+                st.warning(rl_error)
+                st.stop()
+
         image_extract = ""
         proceed = True
         if has_image:
@@ -966,9 +1006,14 @@ with tab1:
                 if extraction["success"]:
                     image_extract = extraction["extracted_text"]
                 else:
-                    # Graceful degradation: surface the error, fall back to the
-                    # typed question only (never block the user from getting help).
-                    st.error(extraction["error"])
+                    # Graceful degradation: log the detail internally, show the
+                    # user a generic message (never expose raw exception text),
+                    # and fall back to the typed question only.
+                    logger.error("Image extraction failed: %s", extraction["error"])
+                    st.error(
+                        "I couldn't read that screenshot. Please describe "
+                        "your issue in text instead."
+                    )
                     image_extract = ""
                 # Clear the uploader so this image isn't reused on the next question.
                 st.session_state.uploader_nonce += 1
@@ -1203,9 +1248,9 @@ with tab2:
 
     st.markdown("""
     <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
-    <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Resilience &amp; Failure Handling</div>
+    <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Resilience, Security &amp; Rate Limiting</div>
     <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-    Retry logic on transient API failures, graceful degradation to a safe escalated response on service outages, fail-closed PII masking, and input validation all prevent crashes from ever reaching users.</div>
+    Retry logic on transient API failures, graceful degradation to a safe escalated response on service outages, fail-closed PII masking, input validation, and per-session sliding-window rate limiting (blocks abuse before it can incur API cost) all keep the public demo stable and safe.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1343,6 +1388,7 @@ with tab2:
         {_flag_pill("Adaptive retry", _cfg['adaptive_retry_enabled'])}
         {_flag_pill("ServiceNow live", _cfg['servicenow_live_enabled'])}
         {_flag_pill("Image upload", _cfg['image_upload_enabled'])}
+        {_flag_pill("Rate limiting", _cfg['rate_limiting_enabled'])}
         </div>
       </div>
     </div>

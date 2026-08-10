@@ -103,6 +103,18 @@ class Config:
         "ENABLE_IMAGE_UPLOAD", True
     )
 
+    # Rate limiting (per session). Generous defaults so normal testing never
+    # trips it; blocks obvious abuse before it can incur API cost.
+    RATE_LIMIT_MAX_REQUESTS = _get_env_int(
+        "RATE_LIMIT_MAX_REQUESTS", 15
+    )
+    RATE_LIMIT_WINDOW_SECONDS = _get_env_int(
+        "RATE_LIMIT_WINDOW_SECONDS", 60
+    )
+    ENABLE_RATE_LIMITING = _get_env_bool(
+        "ENABLE_RATE_LIMITING", True
+    )
+
     # Environment identification
     ENVIRONMENT = _get_env_str(
         "APP_ENVIRONMENT", "production"
@@ -151,6 +163,8 @@ class Config:
                 cls.ENABLE_SERVICENOW_LIVE,
             "image_upload_enabled":
                 cls.ENABLE_IMAGE_UPLOAD,
+            "rate_limiting_enabled":
+                cls.ENABLE_RATE_LIMITING,
             "environment": cls.ENVIRONMENT,
         }
 
