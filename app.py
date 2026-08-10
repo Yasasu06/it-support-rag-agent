@@ -35,6 +35,11 @@ from security import get_audit_summary
 from live_eval import get_live_eval_summary
 from error_handling import validate_user_input
 from config import config
+from image_processing import (
+    validate_image,
+    extract_text_from_image,
+    build_combined_query,
+)
 from connectors.servicenow_connector import (
     is_configured as servicenow_configured,
     test_connection as servicenow_test_connection,
@@ -577,9 +582,15 @@ def render_sources_expander(sources: list, msg_index) -> None:
             )
 
 
-def render_user_message(content: str) -> None:
+def render_user_message(content: str, image_extract: str = "") -> None:
     with st.chat_message("user"):
         st.markdown(content)
+        # When the turn included a screenshot, let the user verify what the
+        # vision model read from it. Absent an image this is a no-op, so the
+        # text-only path renders exactly as before.
+        if image_extract:
+            with st.expander("What I read from your screenshot"):
+                st.write(image_extract)
 
 
 def stream_text(text: str):
@@ -649,22 +660,35 @@ def get_sources_and_top_score(query: str, category: str = "All Categories"):
     return sources, top_score
 
 
-def process_question(question: str, category: str) -> None:
+def process_question(question: str, category: str, image_extract: str = "") -> None:
+    # When a screenshot was read, the pipeline sees the typed text + extracted
+    # screenshot content combined, while the user sees their typed question (or
+    # a placeholder if they typed nothing) plus a "what I read" expander. With
+    # image_extract == "" this is byte-identical to the prior text-only path.
+    if image_extract:
+        pipeline_question = build_combined_query(question, image_extract)
+        display_text = question.strip() or "[Screenshot uploaded]"
+    else:
+        pipeline_question = question
+        display_text = question
+
     # Reject empty or oversized input before it enters the pipeline, so a bad
     # submission gets a clear message instead of running the full agent chain.
     is_valid, validation_error = validate_user_input(
-        question, max_length=config.MAX_QUESTION_LENGTH
+        pipeline_question, max_length=config.MAX_QUESTION_LENGTH
     )
     if not is_valid:
-        st.session_state.messages.append({"role": "user", "content": question})
-        render_user_message(question)
+        st.session_state.messages.append(
+            {"role": "user", "content": display_text, "image_extract": image_extract}
+        )
+        render_user_message(display_text, image_extract)
         with st.chat_message("assistant"):
             st.warning(validation_error)
         st.session_state.messages.append(
             {
                 "role": "assistant",
                 "content": validation_error,
-                "question": question,
+                "question": display_text,
                 "confidence": None,
                 "confidence_score": None,
                 "sources": [],
@@ -675,17 +699,17 @@ def process_question(question: str, category: str) -> None:
         )
         return
 
-    analytical = is_analytical_query(question)
+    analytical = is_analytical_query(pipeline_question)
 
     # Analytical questions ("how many", "average resolution time", ...) go
     # to the tool-calling agent as-is — the category-focus suffix, recent
     # conversation history, and reformulate_query rewrite below are tuned
     # for semantic retrieval/grounding and would just add noise to a
     # tool-selection prompt, so we skip them for this path.
-    augmented_question = question
+    augmented_question = pipeline_question
     if not analytical:
         if category != "All Categories":
-            augmented_question = f"{question} Focus on {category} related tickets if possible."
+            augmented_question = f"{pipeline_question} Focus on {category} related tickets if possible."
 
         # Give follow-up questions ("what about that?") access to recent
         # conversation context, then let reformulate_query clean up the result
@@ -699,14 +723,16 @@ def process_question(question: str, category: str) -> None:
             augmented_question = f"{augmented_question}{history_text}"
         augmented_question = reformulate_query(augmented_question)
 
-    st.session_state.messages.append({"role": "user", "content": question})
-    render_user_message(question)
+    st.session_state.messages.append(
+        {"role": "user", "content": display_text, "image_extract": image_extract}
+    )
+    render_user_message(display_text, image_extract)
 
     with st.chat_message("assistant"):
         try:
             with st.spinner(":shimmer[Searching knowledge base...]"):
                 if analytical:
-                    result = run_tool_agent(question)
+                    result = run_tool_agent(pipeline_question)
                     sources, top_score = [], result["confidence_score"]
                 else:
                     result = run_agent_pipeline(augmented_question)
@@ -734,7 +760,7 @@ def process_question(question: str, category: str) -> None:
                 {
                     "role": "assistant",
                     "content": answer,
-                    "question": question,
+                    "question": display_text,
                     "confidence": level,
                     "confidence_score": top_score,
                     "sources": sources,
@@ -749,7 +775,7 @@ def process_question(question: str, category: str) -> None:
                 {
                     "role": "assistant",
                     "content": ERROR_MESSAGE,
-                    "question": question,
+                    "question": display_text,
                     "confidence": None,
                     "confidence_score": None,
                     "sources": [],
@@ -884,6 +910,23 @@ with tab1:
                 st.rerun()
         st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
 
+    # Optional screenshot upload (feature-flagged). Rendered above the pinned
+    # chat input; when a file is present at submit time its content is extracted
+    # and merged into the question. With no upload, the flow below is unchanged.
+    uploaded_image = None
+    analyze_clicked = False
+    if config.ENABLE_IMAGE_UPLOAD:
+        st.session_state.setdefault("uploader_nonce", 0)
+        uploaded_image = st.file_uploader(
+            "Or upload a screenshot of your error (optional)",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"screenshot_upload_{st.session_state.uploader_nonce}",
+        )
+        if uploaded_image is not None:
+            analyze_clicked = st.button(
+                "Analyze screenshot", key="analyze_screenshot_btn"
+            )
+
     # Pinned chat input at the bottom of the page ------------------------------------
     with st.bottom:
         prompt = st.chat_input("Describe your IT issue...")
@@ -895,9 +938,43 @@ with tab1:
         process_question(pending, category)
         st.rerun()
 
+    # A submission is either typed text (chat_input) or an image-only "Analyze
+    # screenshot" click. submit_text is None when nothing was submitted.
+    has_image = config.ENABLE_IMAGE_UPLOAD and uploaded_image is not None
     if prompt:
-        process_question(prompt, category)
-        st.rerun()
+        submit_text = prompt
+    elif has_image and analyze_clicked:
+        submit_text = ""
+    else:
+        submit_text = None
+
+    if submit_text is not None:
+        image_extract = ""
+        proceed = True
+        if has_image:
+            file_bytes = uploaded_image.getvalue()
+            valid, img_error = validate_image(file_bytes, uploaded_image.type)
+            if not valid:
+                # Invalid image blocks the pipeline (do not proceed).
+                st.error(img_error)
+                proceed = False
+            else:
+                with st.spinner("Analyzing screenshot..."):
+                    extraction = extract_text_from_image(
+                        file_bytes, uploaded_image.type, submit_text
+                    )
+                if extraction["success"]:
+                    image_extract = extraction["extracted_text"]
+                else:
+                    # Graceful degradation: surface the error, fall back to the
+                    # typed question only (never block the user from getting help).
+                    st.error(extraction["error"])
+                    image_extract = ""
+                # Clear the uploader so this image isn't reused on the next question.
+                st.session_state.uploader_nonce += 1
+        if proceed:
+            process_question(submit_text, category, image_extract=image_extract)
+            st.rerun()
 
     # Main content: welcome screen or chat history -----------------------------------
     if not st.session_state.messages:
@@ -905,7 +982,7 @@ with tab1:
     else:
         for idx, msg in enumerate(st.session_state.messages):
             if msg["role"] == "user":
-                render_user_message(msg["content"])
+                render_user_message(msg["content"], msg.get("image_extract", ""))
             else:
                 render_assistant_message(msg, idx)
 
@@ -1132,6 +1209,14 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
 
+    st.markdown("""
+    <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
+    <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Multi-modal Input</div>
+    <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
+    Users can upload error screenshots alongside their question. GPT-4o-mini vision extracts the technical issue, which flows through the same RAG pipeline as typed questions — including PII masking, verification, and confidence scoring.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
 
     # Section 4: Live Evaluation Metrics --------------------------------------------
@@ -1257,6 +1342,7 @@ with tab2:
         {_flag_pill("Verification agent", _cfg['verification_enabled'])}
         {_flag_pill("Adaptive retry", _cfg['adaptive_retry_enabled'])}
         {_flag_pill("ServiceNow live", _cfg['servicenow_live_enabled'])}
+        {_flag_pill("Image upload", _cfg['image_upload_enabled'])}
         </div>
       </div>
     </div>

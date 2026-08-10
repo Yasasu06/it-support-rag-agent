@@ -20,5 +20,6 @@ tqdm
 schedule
 datasets
 huggingface_hub
+Pillow
 pytest
 pytest-mock
