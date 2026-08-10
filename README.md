@@ -177,6 +177,41 @@ streamlit run app.py
 
 ---
 
+## Configuration
+
+All deployment-tunable behavior is centralized in [config.py](config.py) and
+overridable via environment variables. Every value defaults to exactly what the
+system used before the config layer existed, so **the defaults reproduce the
+current behavior identically** — you only change anything by explicitly setting
+a variable. The System tab shows the active configuration at runtime.
+
+| Env var | Default | Controls |
+|---------|---------|----------|
+| `CHAT_MODEL` | `gpt-4o-mini` | LLM used for answers, verification, reformulation, and scoring |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model for retrieval (must match the model the index was built with) |
+| `RETRIEVAL_K` | `3` | Number of tickets retrieved per query |
+| `CONFIDENCE_HIGH_THRESHOLD` | `0.60` | Similarity score at/above which confidence is labeled High |
+| `CONFIDENCE_MEDIUM_THRESHOLD` | `0.20` | Score at/above which confidence is Medium; below triggers Tier 2 escalation |
+| `MAX_RETRIEVAL_RETRIES` | `2` | Max adaptive-retry passes when an answer fails grounding/confidence |
+| `RETRY_DELAY_SECONDS` | `1.0` | Delay between transient-failure retries in the error-handling layer |
+| `LANGGRAPH_RECURSION_LIMIT` | `20` | LangGraph step budget for the multi-agent pipeline |
+| `MAX_QUESTION_LENGTH` | `2000` | Max characters accepted for a user question before rejection |
+| `ENABLE_LIVE_EVAL` | `true` | Real-time per-query scoring/logging (`live_eval`) |
+| `ENABLE_VERIFICATION_AGENT` | `true` | Groundedness verification node in the pipeline; when false, answer routes straight to triage |
+| `ENABLE_ADAPTIVE_RETRY` | `true` | Query-broadening retry loop; when false, the pipeline ends after the first pass |
+| `ENABLE_SERVICENOW_LIVE` | `true` | Live ServiceNow status tool; when false it reports the connection is disabled |
+| `APP_ENVIRONMENT` | `production` | Free-text environment label shown in the System tab |
+
+Example — run a staging instance with a bigger model, verification off, and no
+live eval:
+
+```bash
+CHAT_MODEL=gpt-4o ENABLE_VERIFICATION_AGENT=false ENABLE_LIVE_EVAL=false \
+APP_ENVIRONMENT=staging streamlit run app.py
+```
+
+---
+
 ## Testing
 
 The project has a pytest suite split into fast unit tests (no API key, no

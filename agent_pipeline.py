@@ -49,17 +49,21 @@ except Exception:
 
 load_dotenv()
 
+from config import config
+
 # Configuration -------------------------------------------------------------
+# Sourced from the centralized config (env-overridable); defaults match the
+# previous hardcoded values exactly, so default behavior is unchanged.
 CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
 COLLECTION_NAME = "it_support_tickets"
-EMBEDDING_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4o-mini"
-TOP_K = 3
+EMBEDDING_MODEL = config.EMBEDDING_MODEL
+CHAT_MODEL = config.CHAT_MODEL
+TOP_K = config.RETRIEVAL_K
 # Recalibrated from the spec's literal 0.60: this Chroma setup's relevance
 # scores top out around 0.25-0.32 even for clearly correct matches, with
 # weak/unrelated matches at 0.18 or below. 0.20 is the observed gap between
-# those two bands.
-CONFIDENCE_THRESHOLD = 0.20
+# those two bands. Sourced from the config's medium threshold (same 0.20).
+CONFIDENCE_THRESHOLD = config.CONFIDENCE_MEDIUM_THRESHOLD
 
 ANSWER_SYSTEM_PROMPT = (
     "You are an enterprise IT support assistant. "
@@ -266,6 +270,12 @@ def check_live_servicenow_status() -> str:
     "right now", or "live" incident status, or asks to verify the
     ServiceNow connection is working.
     """
+    if not config.ENABLE_SERVICENOW_LIVE:
+        return (
+            "The live ServiceNow connection is disabled via configuration "
+            "(ENABLE_SERVICENOW_LIVE=false). Only batch-ingested data is in use."
+        )
+
     if not servicenow_configured():
         return (
             "ServiceNow live connection is not configured. "
@@ -592,13 +602,18 @@ def retry_decision(state: AgentState) -> str:
     Pure routing: no state mutation (state mutation is handled by
     prepare_retry node so LangGraph reliably propagates the update).
     """
+    # Feature flag: when adaptive retry is disabled, always end after the first
+    # pass regardless of grounding/confidence.
+    if not config.ENABLE_ADAPTIVE_RETRY:
+        return "end"
+
     retry_count = state.get("retry_count", 0)
     grounded = state.get("grounded")
     escalation = state.get("escalation", False)
 
     should_retry = (
         (grounded is False or escalation is True)
-        and retry_count < 2
+        and retry_count < config.MAX_RETRIEVAL_RETRIES
     )
     return "retry" if should_retry else "end"
 
@@ -616,13 +631,22 @@ def prepare_retry(state: AgentState) -> dict:
 workflow = StateGraph(AgentState)
 workflow.add_node("retrieval", retrieval_agent)
 workflow.add_node("answer", answer_agent)
-workflow.add_node("verification", verification_agent)
 workflow.add_node("triage", triage_agent)
 workflow.add_node("prepare_retry", prepare_retry)
 workflow.set_entry_point("retrieval")
 workflow.add_edge("retrieval", "answer")
-workflow.add_edge("answer", "verification")
-workflow.add_edge("verification", "triage")
+
+# Feature flag: route through the verification agent only when enabled. When
+# disabled, the answer goes straight to triage and `grounded` stays None, so
+# triage's groundedness check is a no-op (None is not False) — matching a
+# pipeline that never verified.
+if config.ENABLE_VERIFICATION_AGENT:
+    workflow.add_node("verification", verification_agent)
+    workflow.add_edge("answer", "verification")
+    workflow.add_edge("verification", "triage")
+else:
+    workflow.add_edge("answer", "triage")
+
 workflow.add_conditional_edges(
     "triage",
     retry_decision,
@@ -657,7 +681,7 @@ def _run_agent_pipeline_impl(question: str) -> dict:
             "retry_count": 0,
             "retry_history": [],
         },
-        config={"recursion_limit": 20},
+        config={"recursion_limit": config.LANGGRAPH_RECURSION_LIMIT},
     )
     latency = time.time() - start_time
 
@@ -675,25 +699,27 @@ def _run_agent_pipeline_impl(question: str) -> dict:
         sources=sources,
     )
 
-    try:
-        relevance = score_response_relevance(
-            question,
-            result.get("answer", ""),
-            _get_chat_llm,
-        )
-        log_live_eval(
-            question=question,
-            answer=result.get("answer", ""),
-            grounded=result.get("grounded"),
-            verification_notes=result.get("verification_notes", ""),
-            confidence_score=result.get("confidence_score", 0),
-            relevance_score=relevance,
-            escalation=result.get("escalation", False),
-            tier=result.get("tier", "Tier 1"),
-            latency_seconds=latency,
-        )
-    except Exception:
-        pass
+    # Feature flag: skip real-time scoring/logging entirely when disabled.
+    if config.ENABLE_LIVE_EVAL:
+        try:
+            relevance = score_response_relevance(
+                question,
+                result.get("answer", ""),
+                _get_chat_llm,
+            )
+            log_live_eval(
+                question=question,
+                answer=result.get("answer", ""),
+                grounded=result.get("grounded"),
+                verification_notes=result.get("verification_notes", ""),
+                confidence_score=result.get("confidence_score", 0),
+                relevance_score=relevance,
+                escalation=result.get("escalation", False),
+                tier=result.get("tier", "Tier 1"),
+                latency_seconds=latency,
+            )
+        except Exception:
+            pass
 
     return {
         "answer": result["answer"],

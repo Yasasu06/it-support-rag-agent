@@ -34,6 +34,7 @@ from agent_pipeline import run_agent_pipeline, run_tool_agent
 from security import get_audit_summary
 from live_eval import get_live_eval_summary
 from error_handling import validate_user_input
+from config import config
 from connectors.servicenow_connector import (
     is_configured as servicenow_configured,
     test_connection as servicenow_test_connection,
@@ -81,7 +82,9 @@ def log_feedback(
 # Configuration --------------------------------------------------------------
 CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
 COLLECTION_NAME = "it_support_tickets"
-EMBEDDING_MODEL = "text-embedding-3-small"
+# Sourced from config so the UI vectorstore stays in lockstep with the model
+# used to build the index (default unchanged: text-embedding-3-small).
+EMBEDDING_MODEL = config.EMBEDDING_MODEL
 TOP_K = 3
 
 CATEGORIES = [
@@ -497,9 +500,9 @@ def escape_html(text: str) -> str:
 
 
 def confidence_from_score(score: float) -> str:
-    if score >= 0.60:
+    if score >= config.CONFIDENCE_HIGH_THRESHOLD:
         return "High"
-    if score >= 0.20:
+    if score >= config.CONFIDENCE_MEDIUM_THRESHOLD:
         return "Medium"
     return "Low"
 
@@ -649,7 +652,9 @@ def get_sources_and_top_score(query: str, category: str = "All Categories"):
 def process_question(question: str, category: str) -> None:
     # Reject empty or oversized input before it enters the pipeline, so a bad
     # submission gets a clear message instead of running the full agent chain.
-    is_valid, validation_error = validate_user_input(question)
+    is_valid, validation_error = validate_user_input(
+        question, max_length=config.MAX_QUESTION_LENGTH
+    )
     if not is_valid:
         st.session_state.messages.append({"role": "user", "content": question})
         render_user_message(question)
@@ -1201,6 +1206,59 @@ with tab2:
         </div>
       </div>
 
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
+
+    # Section 4b: Effective configuration -------------------------------------------
+    st.markdown("### Effective Configuration")
+    st.markdown(
+        "<p style='color:#64748B;font-size:0.85rem'>"
+        "Every value below is environment-overridable via <code>config.py</code> "
+        "— models, thresholds, retry behavior, and feature flags — with no code "
+        "changes. Shown here as the currently active configuration.</p>",
+        unsafe_allow_html=True,
+    )
+
+    _cfg = config.summary()
+
+    def _flag_pill(label: str, on: bool) -> str:
+        color = "#10B981" if on else "#94A3B8"
+        bg = "#ECFDF5" if on else "#F1F5F9"
+        state = "on" if on else "off"
+        return (
+            f"<span style='display:inline-block;margin:0.15rem 0.35rem 0.15rem 0;"
+            f"background:{bg};color:{color};font-size:0.72rem;font-weight:600;"
+            f"border-radius:50px;padding:0.2rem 0.65rem'>{label}: {state}</span>"
+        )
+
+    st.markdown(f"""
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:1.5rem;
+    display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+      <div>
+        <div style="font-size:0.7rem;color:#94A3B8;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:0.75rem">
+        Settings</div>
+        <div style="font-size:0.8rem;color:#374151;line-height:2">
+        Environment: <strong>{escape_html(str(_cfg['environment']))}</strong><br>
+        Chat model: <strong>{escape_html(str(_cfg['chat_model']))}</strong><br>
+        Embedding model: <strong>{escape_html(str(_cfg['embedding_model']))}</strong><br>
+        Retrieval k: <strong>{_cfg['retrieval_k']}</strong><br>
+        Confidence High / Medium: <strong>{_cfg['confidence_high']} / {_cfg['confidence_medium']}</strong><br>
+        Max retries: <strong>{_cfg['max_retries']}</strong><br>
+        Max question length: <strong>{_cfg['max_question_length']}</strong>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:0.7rem;color:#94A3B8;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:0.75rem">
+        Feature Flags</div>
+        <div>
+        {_flag_pill("Live eval", _cfg['live_eval_enabled'])}
+        {_flag_pill("Verification agent", _cfg['verification_enabled'])}
+        {_flag_pill("Adaptive retry", _cfg['adaptive_retry_enabled'])}
+        {_flag_pill("ServiceNow live", _cfg['servicenow_live_enabled'])}
+        </div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
