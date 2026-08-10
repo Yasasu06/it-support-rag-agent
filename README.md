@@ -69,7 +69,7 @@ All data passes through a normalization pipeline: text cleaning/truncation, PII 
 |---------|---------------|
 | PII Detection | Microsoft Presidio with `en_core_web_sm` |
 | Query Audit Logging | JSONL audit trail per query |
-| Evaluation System | LangSmith tracing, 85% accuracy on a 20-question test suite |
+| Evaluation System | LangSmith tracing, 90% accuracy on a 20-question test suite |
 | Real-time Ingestion | Watchdog file monitor — drops a JSON file in `new_tickets/`, it's embedded and ingested automatically |
 | Nightly Refresh | Schedule-based automatic re-ingestion at 02:00 UTC |
 | Feedback Collection | Per-answer thumbs up/down, aggregated into a satisfaction percentage |
@@ -83,10 +83,10 @@ All data passes through a normalization pipeline: text cleaning/truncation, PII 
 
 Tested against 20 questions spanning all 8 incident categories:
 
-- Overall accuracy: 85% (17/20)
-- In-scope questions answered correctly: 13/16
+- Overall accuracy: 90% (18/20)
+- In-scope questions answered correctly: 14/16
 - Out-of-scope questions refused correctly: 4/4
-- All 3 failures were correctly-grounded refusals on weak/borderline matches, not fabricated answers — no hallucinated ticket IDs observed in the suite
+- Both remaining failures were refusals on in-scope questions with weak/borderline retrieval matches, not fabricated answers — no hallucinated ticket IDs observed in the suite
 
 ---
 

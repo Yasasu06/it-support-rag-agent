@@ -1,20 +1,20 @@
 {
-  "timestamp": "2026-06-23T20:08:36.148103",
+  "timestamp": "2026-08-09T22:21:21.295015",
   "total_questions": 20,
-  "passed": 17,
-  "failed": 3,
-  "accuracy": 85.0,
-  "in_scope_correct": 13,
+  "passed": 18,
+  "failed": 2,
+  "accuracy": 90.0,
+  "in_scope_correct": 14,
   "in_scope_total": 16,
   "out_of_scope_correct": 4,
   "out_of_scope_total": 4,
-  "grade": "Good \u2014 minor improvements needed",
+  "grade": "Production Ready",
   "results": [
     {
       "question": "My printer is not printing anything",
       "expected_category": "Printer",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-031, the issue of a printer not printing anything could be related to a problem with the print spooler. In that case, the print jobs were stuck in the queue with an 'Error' status. The resolution involved clearing the stuck jobs and restarting the Print Spooler service. If your printer is not printing, you may want to check if there are any jobs stuck in the queue or if the Print Spooler service needs to be restarted. \n\nIf you need further assistance, please provide more details about your specific situation.",
+      "answer": "Based on Ticket ID: TKT-031, the issue of the printer not printing could be due to the print spooler on the print server hanging, which can cause print jobs to sit in the queue with an 'Error' status. The resolution involved clearing the stuck jobs, restarting the Print Spooler service, and confirming that a test page printed successfully. If you're experiencing similar issues, you may want to check the print spooler status.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -23,7 +23,7 @@
       "question": "I cannot access SAP after my account was locked",
       "expected_category": "ERP Access",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-048, the issue of being unable to access SAP after an account was locked can occur if the account is flagged as dormant due to inactivity. In this case, the account was auto-locked by the dormancy policy after 90 days of inactivity. The resolution involved reactivating the SAP user in SU01, resetting the validity dates, and having the user log in and change their password to confirm access was restored. \n\nIf your account was locked for a similar reason, you may need to follow a similar process to regain access.",
+      "answer": "To unlock your SAP account, it was confirmed that accounts can be auto-locked by the dormancy policy after 90 days of inactivity. In a similar case (Ticket ID: TKT-048), the account was reactivated in SU01, and the user was required to log in and change their password to confirm access was restored. \n\nIf your account is locked, you may need to have it reactivated and follow the necessary steps to regain access.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -32,16 +32,16 @@
       "question": "Outlook keeps asking me to sign in repeatedly",
       "expected_category": "Email",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-025, a similar issue involved a user's Outlook being stuck on 'Trying to connect...' which was resolved by recreating the Outlook profile. While the exact symptom of repeated sign-in requests is not directly mentioned, it may be related to profile issues. I recommend checking the Outlook profile settings or recreating the profile to resolve the issue. \n\nIf the problem persists, further investigation may be needed.",
+      "answer": "I don't have information on that in the enterprise knowledge base.",
       "expected_behavior": "Answer",
-      "actual_behavior": "Answered",
-      "passed": true
+      "actual_behavior": "Refused",
+      "passed": false
     },
     {
       "question": "My laptop screen went black and won't turn on",
       "expected_category": "Hardware",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-019, a similar issue involved a laptop that would not power on and showed no response when plugged into the dock. The resolution involved isolating the fault to a failed dock power adapter and connecting the laptop directly to a known-good charger. After performing a battery-drain reset and replacing the faulty dock adapter, the laptop booted normally. \n\nWhile your issue specifically mentions a black screen, it may be related to power issues similar to those described in TKT-019. I recommend checking the power source and performing a battery-drain reset. \n\nIf the problem persists, further diagnostics may be necessary.",
+      "answer": "Based on Ticket ID: TKT-019, the resolution for a laptop that will not power on is to isolate the fault. In that case, the issue was determined to be a failed dock power adapter rather than the laptop itself. The recommended steps are to connect the laptop directly to a known-good charger, perform a battery-drain reset, and if necessary, replace the faulty power adapter. After these steps, the laptop should boot normally.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -50,7 +50,7 @@
       "question": "I need access to Power BI for my team",
       "expected_category": "Software Access",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-014, if you need access to Power BI for your team, ensure that the users have the appropriate licenses. In the case mentioned, a user had a Power BI Free license but required a Pro license to access the shared workspace. You may need to assign Power BI Pro licenses to your team members and ensure they are added to the appropriate workspaces.",
+      "answer": "To grant Power BI access to your team, you can follow a similar process as outlined in Ticket ID: TKT-014. In that case, the analyst was assigned a Power BI Pro license in the Microsoft 365 admin center and added to the Finance workspace as a Viewer. Ensure that your team members have the appropriate licenses and are added to the necessary workspaces. \n\nIf you need further assistance, please refer to Ticket ID: TKT-078, where a user regained access after a manual sync was performed due to a failed sync job. \n\nFor more detailed steps, you may need to consult your IT department or the Microsoft 365 admin center.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -59,16 +59,16 @@
       "question": "Network drive is not showing up on my computer",
       "expected_category": "Network",
       "should_answer": true,
-      "answer": "I don't have information on that in the enterprise knowledge base.",
+      "answer": "Based on Ticket ID: GH-MIC-239224, the issue regarding accessing a network share may relate to your problem with the network drive not appearing. The resolution indicated that the problem was related to UNC network shares. It suggests ensuring that the correct URL format is used when accessing network shares. \n\nIf you are having trouble with a network drive, make sure you are using the correct path and that the share is properly configured. \n\nIf you need further assistance, please provide more details about the issue.",
       "expected_behavior": "Answer",
-      "actual_behavior": "Refused",
-      "passed": false
+      "actual_behavior": "Answered",
+      "passed": true
     },
     {
       "question": "I forgot my Windows password and am locked out",
       "expected_category": "Password",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-007, if you forgot your Windows password and are locked out, the resolution involves verifying your identity and then resetting your Active Directory password. After the reset, you would be walked through setting a new password at your next logon to confirm you can sign in.",
+      "answer": "To reset a forgotten Windows password, you can verify your identity through a manager or employee ID, then reset the Active Directory password and clear any account lockout. After that, you can set a new password at the next logon. This process is similar to what was done in Ticket ID: TKT-007, where the user's identity was verified, and the password was reset. \n\nTicket ID: TKT-007.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -77,7 +77,7 @@
       "question": "VPN disconnects every few minutes while working from home",
       "expected_category": "VPN",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-004, the issue of VPN disconnects every few minutes while working from home can be related to an aggressive idle-timeout on the user's consumer router. In this case, the resolution involved raising the dead-peer-detection interval on the VPN profile and advising the user to disable the router's Wi-Fi power-saving mode, which stabilized the session.",
+      "answer": "To fix frequent VPN disconnects while working from home, you can refer to Ticket ID: TKT-004. The resolution involved tracing the drops to an aggressive idle-timeout on the user's consumer router and a low DPD value in the group policy. The solution was to raise the dead-peer-detection interval on the VPN profile and advise disabling the router's Wi-Fi power-saving mode, which stabilized the session.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -86,7 +86,7 @@
       "question": "Printer shows offline but is turned on",
       "expected_category": "Printer",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-036, the issue of a printer showing offline while it is powered on can occur if the printer has picked up a new DHCP address while its print queue still points to the old IP. The resolution involved setting a DHCP reservation for the printer's MAC, updating the port on the print server to the new address, and confirming that the queue came back online for all users.",
+      "answer": "The printer is showing offline because it had picked up a new DHCP address while its print queue still pointed at the old IP. A DHCP reservation was set for the printer's MAC, the port on the print server was updated to the new address, and it was confirmed that the queue came back online for all users. This information is based on Ticket ID: TKT-036.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -104,7 +104,7 @@
       "question": "My email signature is not showing in Outlook",
       "expected_category": "Email",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-111, the issue of an email signature not showing in Outlook could be related to configuration settings. In that ticket, a standard branded signature template was applied through the central signature management tool. If your email signature is not showing, you may need to check if it has been configured correctly or if the central management tool needs to be used to apply the signature. \n\nIf you need further assistance, please let me know!",
+      "answer": "To fix a missing email signature in Outlook, you can refer to Ticket ID: TKT-106. The resolution involved deploying the standard department signature template via the email signature tool and confirming that it appeared correctly when the new hire logged in. \n\nTicket ID: TKT-106.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -113,16 +113,16 @@
       "question": "Computer is running very slowly after Windows update",
       "expected_category": "Hardware",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-095, there was an issue where Bluetooth devices stopped working after a Windows update, which indicates that updates can cause performance issues. However, there is no specific resolution for a computer running slowly after a Windows update in the provided tickets. \n\nI don't have information on that in the enterprise knowledge base.",
+      "answer": "To fix slow computer performance after a Windows update, you can refer to Ticket ID: TKT-095. The resolution involved rolling back a broken generic Bluetooth driver that was causing issues across the office fleet. While this specific ticket addresses Bluetooth issues, it highlights the importance of checking for driver-related problems after an update. \n\nFor general slow performance, you might also consider checking for full storage or thermal issues, as seen in Ticket ID: TKT-022, where diagnostics showed the SSD was 98% full and there was thermal throttling due to dust-clogged vents. In that case, clearing temp files, offloading data, and cleaning the vents resolved the performance issues.\n\nIf you need more specific steps, please refer to the relevant tickets.",
       "expected_behavior": "Answer",
-      "actual_behavior": "Refused",
-      "passed": false
+      "actual_behavior": "Answered",
+      "passed": true
     },
     {
       "question": "Cannot install Adobe Acrobat on my work laptop",
       "expected_category": "Software Access",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-076, it appears that Adobe Acrobat can be deployed via SCCM. If you are having trouble installing Adobe Acrobat, it may be beneficial to check if you have the necessary permissions or if the software is available through the software portal. If you need further assistance, please provide more details about the issue you are encountering.",
+      "answer": "Based on Ticket ID: TKT-151, the issue of being unable to install an application on a work laptop is addressed. The resolution involved confirming that the laptop was under a standard-user policy that blocks local-admin installs. Instead of granting standing admin rights, the approved application package was pushed through the Company Portal / Software Center, allowing it to install under the system account. \n\nIf you are facing a similar issue with Adobe Acrobat, you may need to follow a similar process.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -131,7 +131,7 @@
       "question": "WiFi keeps dropping in the conference room",
       "expected_category": "Network",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-130, the issue of Wi-Fi dropping in the conference room could be related to inadequate coverage or interference. In that ticket, a Wi-Fi site survey was conducted to confirm adequate coverage, and testing was performed to ensure a stable connection before the room opened. If you are experiencing Wi-Fi drops, it may be beneficial to conduct a similar site survey to identify any coverage issues or interference in your conference room.",
+      "answer": "The issue of WiFi dropping in the conference room may be related to network coverage or interference. In a similar case (Ticket ID: TKT-132), access points across a building were found to intermittently reboot due to a firmware update, causing drops for connected users. The resolution involved rolling back the firmware and applying a patch to stabilize the connection. \n\nFor your specific situation, it may be beneficial to conduct a site survey to check for coverage and interference issues in the conference room. \n\nPlease refer to Ticket ID: TKT-132 for more details on the resolution process.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -140,7 +140,7 @@
       "question": "Account locked after too many wrong password attempts",
       "expected_category": "Password",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-067, the issue of an account being locked after too many wrong password attempts can be resolved by verifying the user's identity and resetting the relevant credentials. In this case, the executive's smart card PIN was locked after failed attempts, and the resolution involved reissuing a working smart card and resetting the PIN counter. \n\nIf you are experiencing a similar issue, it may be necessary to verify your identity and reset your credentials to regain access. \n\nTicket ID: TKT-067.",
+      "answer": "To unlock your account after multiple incorrect password attempts, you can follow the resolution from Ticket ID: TKT-067. In that case, the user's identity was verified in person, and they were walked to the badge office to reissue a working smart card. Additionally, the PIN counter was reset, and the new card was re-enrolled to their account, which confirmed successful login. \n\nIf you are unable to verify your identity in person, please contact your IT support for further assistance.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -149,7 +149,7 @@
       "question": "AnyConnect shows login failed after password reset",
       "expected_category": "VPN",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-001, the issue of \"Login failed\" after entering credentials can be related to account lockouts due to repeated failed MFA prompts. In that case, the user's Active Directory account was locked, and unlocking the account resolved the issue. \n\nIf the \"login failed\" error after a password reset is due to a similar account lockout or MFA issue, it may require checking the account status in Active Directory or resetting the MFA device pairing. \n\nPlease check the account status to ensure it is not locked.",
+      "answer": "Based on Ticket ID: TKT-001, the resolution for a similar issue states that the user's Active Directory account was locked due to repeated failed MFA prompts. The account was unlocked in AD, the Duo MFA device pairing was reset, and it was confirmed that AnyConnect connected successfully to the GR-VPN gateway. \n\nIf you are experiencing a login failure after a password reset, it may be worth checking if your account is locked or if there are issues with MFA.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
