@@ -1,9 +1,8 @@
 # CI: fast unit tests on every push / PR to main.
 #
-# Design decision — this workflow runs ONLY the fast unit tests
-# (test_normalize, test_security, test_routing_logic, test_retry_decision).
-# It deliberately does NOT run tests/test_integration.py, because those tests
-# make real OpenAI API calls. Running them in CI would require exposing
+# Design decision — this workflow runs the ENTIRE tests/ directory (so new test
+# files are picked up automatically) EXCEPT tests/test_integration.py, because
+# those tests make real OpenAI API calls. Running them in CI would require exposing
 # OPENAI_API_KEY as a GitHub Actions secret and would incur real API cost on
 # every push. Skipping them here is a common, reasonable real-world tradeoff:
 # the fast suite gates every change at zero cost, while the integration tests
@@ -43,7 +42,7 @@ jobs:
 
       - name: Run fast unit tests (no API key required)
         run: |
-          python -m pytest tests/test_normalize.py tests/test_security.py tests/test_routing_logic.py tests/test_retry_decision.py -v
+          python -m pytest tests/ -v --ignore=tests/test_integration.py
 
       - name: Report test summary
         if: always()
