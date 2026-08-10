@@ -57,7 +57,9 @@ from config import config
 CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
 COLLECTION_NAME = "it_support_tickets"
 EMBEDDING_MODEL = config.EMBEDDING_MODEL
-CHAT_MODEL = config.CHAT_MODEL
+# active_chat_model() returns the fine-tuned model when enabled+set, else the
+# base CHAT_MODEL (default). Default behavior is unchanged.
+CHAT_MODEL = config.active_chat_model()
 TOP_K = config.RETRIEVAL_K
 # Recalibrated from the spec's literal 0.60: this Chroma setup's relevance
 # scores top out around 0.25-0.32 even for clearly correct matches, with

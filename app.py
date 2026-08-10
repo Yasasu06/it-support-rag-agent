@@ -1092,7 +1092,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Fine-tuning Pipeline</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        120-example training dataset prepared. Pipeline built and validated. Pending OpenAI RFT access for deployment.</div>
+        120-example dataset prepared and model comparison harness built and validated. System can serve a fine-tuned model via config the moment one exists — blocked on OpenAI platform access, not system readiness.</div>
         </div>
         """, unsafe_allow_html=True)
 

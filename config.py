@@ -45,6 +45,17 @@ class Config:
         "EMBEDDING_MODEL", "text-embedding-3-small"
     )
 
+    # Fine-tuned model wiring — unused until a model exists. When
+    # USE_FINETUNED_MODEL is true AND FINETUNED_MODEL_ID is set, the pipeline
+    # serves that model instead of CHAT_MODEL. Defaults keep the base model, so
+    # production is unchanged until both env vars are flipped (no code change).
+    FINETUNED_MODEL_ID = _get_env_str(
+        "FINETUNED_MODEL_ID", ""
+    )
+    USE_FINETUNED_MODEL = _get_env_bool(
+        "USE_FINETUNED_MODEL", False
+    )
+
     # Retrieval
     RETRIEVAL_K = _get_env_int("RETRIEVAL_K", 3)
 
@@ -93,6 +104,25 @@ class Config:
     ENVIRONMENT = _get_env_str(
         "APP_ENVIRONMENT", "production"
     )
+
+    @classmethod
+    def active_chat_model(cls) -> str:
+        """
+        The chat model to actually serve: the fine-tuned model when it is both
+        explicitly enabled AND an ID is present, otherwise the base CHAT_MODEL.
+        Reads env live so the switch can be flipped without a code change; the
+        default path (USE_FINETUNED_MODEL unset/false, or no ID) returns
+        CHAT_MODEL exactly as before, so production behavior is unchanged.
+        """
+        use_ft = _get_env_bool(
+            "USE_FINETUNED_MODEL", cls.USE_FINETUNED_MODEL
+        )
+        ft_id = _get_env_str(
+            "FINETUNED_MODEL_ID", cls.FINETUNED_MODEL_ID
+        ).strip()
+        if use_ft and ft_id:
+            return ft_id
+        return cls.CHAT_MODEL
 
     @classmethod
     def summary(cls) -> dict:
