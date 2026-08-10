@@ -44,12 +44,16 @@ except Exception:
 # Step 1: load environment variables (expects OPENAI_API_KEY in .env)
 load_dotenv()
 
+from config import config
+
 # Configuration -------------------------------------------------------------
+# Values are sourced from the centralized config (env-overridable), defaulting
+# to exactly the previous hardcoded values so default behavior is unchanged.
 CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
 COLLECTION_NAME = "it_support_tickets"
-EMBEDDING_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4o-mini"
-TOP_K = 3
+EMBEDDING_MODEL = config.EMBEDDING_MODEL
+CHAT_MODEL = config.CHAT_MODEL
+TOP_K = config.RETRIEVAL_K
 
 SYSTEM_PROMPT = (
     "You are an IT support assistant. Answer questions using ONLY the "
