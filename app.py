@@ -144,7 +144,7 @@ CONFIDENCE_HTML = {
 
 # Exact warning blocks injected in place of st.info()/st.warning().
 PII_HTML = (
-    '<div style="background:#EEF2FF;border-left:3px solid #4F46E5;border-radius:8px;'
+    '<div style="background:#E8EDFF;border-left:3px solid #2453FF;border-radius:8px;'
     'padding:0.75rem 1rem;margin-top:0.5rem;">'
     '<div style="color:#3730A3;font-weight:600;font-size:0.85rem;">Privacy Protection Active</div>'
     '<div style="color:#3730A3;font-size:0.8rem;margin-top:0.25rem;">'
@@ -193,303 +193,336 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Force sidebar visible */
-    section[data-testid="stSidebar"] {
-      display: flex !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      width: 280px !important;
-      min-width: 280px !important;
-      max-width: 280px !important;
-      transform: none !important;
-      background-color: #0F172A !important;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-    section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
-      width: 280px !important;
-      min-width: 280px !important;
-    }
-    section[data-testid="stSidebar"] > div:not([data-testid="stSidebarContent"]) {
-      display: none !important;
-    }
+:root {
+  --bg: #F7F7F4;
+  --surface: #FFFFFF;
+  --surface-alt: #F0F0EC;
+  --ink: #12141C;
+  --ink-muted: #5B6072;
+  --ink-faint: #9599A8;
+  --sidebar-bg: #0D1117;
+  --sidebar-ink: #C9D1D9;
+  --sidebar-muted: #6E7681;
+  --sidebar-border: #21262D;
+  --accent: #2453FF;
+  --accent-soft: #E8EDFF;
+  --success: #0F9D6C;
+  --success-soft: #E3F6EE;
+  --warning: #C97A1A;
+  --warning-soft: #FBEEDD;
+  --danger: #D64545;
+  --danger-soft: #FBE7E7;
+  --border: #E4E4DF;
+}
 
-    /* Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+* { font-family: 'Inter', sans-serif !important; }
 
-    /* Global reset */
-    * { font-family: 'Inter', sans-serif !important; }
+h1, h2, h3, .display-text {
+  font-family: 'Space Grotesk', sans-serif !important;
+  letter-spacing: -0.02em !important;
+  color: var(--ink) !important;
+}
 
-    /* Restore Material Symbols icon font. The wildcard rule above would
-       otherwise force 'Inter' onto Streamlit's ligature icon spans, so the
-       icon's glyph name (e.g. "keyboard_double_arrow_left" for the sidebar
-       collapse control) renders as visible text instead of the glyph.
-       [data-testid="stIconMaterial"] out-specifies the '*' selector, so this
-       wins even against the !important above. */
-    [data-testid="stIconMaterial"],
-    span[data-testid="stIconMaterial"],
-    .material-icons,
-    .material-icons-outlined,
-    .material-symbols-rounded,
-    .material-symbols-outlined {
-      font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
-                   'Material Icons' !important;
-    }
+.mono, .mono * {
+  font-family: 'JetBrains Mono', monospace !important;
+}
 
-    /* Hide Streamlit default chrome */
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    header { visibility: hidden; }
-    [data-testid="stToolbar"] { display: none !important; }
-    [data-testid="stDecoration"] { display: none !important; }
-    [data-testid="stStatusWidget"] { display: none !important; }
+/* Restore Material icon font Streamlit needs - do
+   NOT let the wildcard reset break native icons */
+[data-testid="stIconMaterial"],
+.material-icons, .material-symbols-rounded {
+  font-family: 'Material Symbols Rounded' !important;
+}
 
-    .stApp {
-      background-color: #F8FAFC !important;
-    }
+#MainMenu, footer, header,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"] {
+  display: none !important;
+}
 
-    /* Main content area */
-    .main .block-container {
-      padding-top: 2rem;
-      padding-bottom: 6rem;
-      max-width: 780px;
-    }
+.stApp { background-color: var(--bg) !important; }
 
-    h1, h2, h3 {
-      color: #0F172A !important;
-      font-weight: 700 !important;
-    }
+.main .block-container {
+  max-width: 820px !important;
+  padding: 2rem 2rem 6rem 2rem !important;
+}
 
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-      background: #0F172A !important;
-      border-right: none !important;
-      width: 280px !important;
-      min-width: 280px !important;
-      max-width: 280px !important;
-    }
-    section[data-testid="stSidebar"] * {
-      color: #CBD5E1 !important;
-    }
-    section[data-testid="stSidebar"] h1,
-    section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3 {
-      color: #F1F5F9 !important;
-    }
-    section[data-testid="stSidebar"] hr {
-      border-color: #1E293B !important;
-    }
+/* Sidebar - terminal panel */
+section[data-testid="stSidebar"] {
+  background-color: var(--sidebar-bg) !important;
+  border-right: 1px solid var(--sidebar-border) !important;
+}
+section[data-testid="stSidebar"] * {
+  color: var(--sidebar-ink) !important;
+}
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2 {
+  font-family: 'Space Grotesk', sans-serif !important;
+  color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] p {
+  color: var(--sidebar-muted) !important;
+  font-size: 0.8rem !important;
+  line-height: 1.5 !important;
+}
+section[data-testid="stSidebar"] hr {
+  border-color: var(--sidebar-border) !important;
+}
 
-    /* Sidebar metrics */
-    section[data-testid="stSidebar"] [data-testid="stMetric"] {
-      background: #1E293B !important;
-      border: 1px solid #334155 !important;
-      border-radius: 10px !important;
-      padding: 0.75rem !important;
-    }
-    section[data-testid="stSidebar"] [data-testid="stMetricLabel"] {
-      color: #94A3B8 !important;
-      font-size: 0.7rem !important;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    section[data-testid="stSidebar"] [data-testid="stMetricValue"] {
-      color: #F1F5F9 !important;
-      font-size: 1.1rem !important;
-    }
+/* Sidebar metric cards - instrument readout style */
+section[data-testid="stSidebar"] [data-testid="stMetric"] {
+  background: #161B22 !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 6px !important;
+  padding: 0.7rem 0.9rem !important;
+}
+section[data-testid="stSidebar"] [data-testid="stMetricLabel"] {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.65rem !important;
+  color: var(--sidebar-muted) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+}
+section[data-testid="stSidebar"] [data-testid="stMetricValue"] {
+  font-family: 'JetBrains Mono', monospace !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+}
 
-    /* Sidebar selectbox */
-    section[data-testid="stSidebar"] [data-testid="stSelectbox"] > div {
-      background: #1E293B !important;
-      border: 1px solid #334155 !important;
-      border-radius: 8px !important;
-      color: #F1F5F9 !important;
-    }
+/* Tabs */
+[data-testid="stTabs"] button {
+  font-family: 'Space Grotesk', sans-serif !important;
+  font-weight: 600 !important;
+  color: var(--ink-muted) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+  color: var(--accent) !important;
+  border-bottom: 2px solid var(--accent) !important;
+}
 
-    /* Sidebar buttons */
-    section[data-testid="stSidebar"] button {
-      background: #1E293B !important;
-      color: #94A3B8 !important;
-      border: 1px solid #334155 !important;
-      border-radius: 8px !important;
-      width: 100% !important;
-      font-size: 0.8rem !important;
-    }
-    section[data-testid="stSidebar"] button:hover {
-      background: #334155 !important;
-      color: #F1F5F9 !important;
-    }
+/* Header bar */
+.app-header {
+  display: flex; align-items: center; gap: 0.85rem;
+  padding-bottom: 1.25rem; margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.app-header .badge {
+  width: 38px; height: 38px; border-radius: 8px;
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600; color: var(--accent); font-size: 0.9rem;
+}
+.app-header .title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 1rem; color: var(--ink);
+}
+.app-header .subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; color: var(--ink-faint);
+}
 
-    /* Suggestion chips on welcome screen */
-    .stButton > button {
-      background: #FFFFFF !important;
-      border: 1px solid #E2E8F0 !important;
-      border-radius: 50px !important;
-      color: #374151 !important;
-      font-size: 0.85rem !important;
-      font-weight: 500 !important;
-      padding: 0.5rem 1rem !important;
-      width: 100% !important;
-      text-align: left !important;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
-      transition: all 0.15s ease !important;
-    }
-    .stButton > button:hover {
-      background: #4F46E5 !important;
-      color: white !important;
-      border-color: #4F46E5 !important;
-      box-shadow: 0 4px 12px rgba(79,70,229,0.3) !important;
-      transform: translateY(-2px) !important;
-    }
+/* Chat bubbles */
+[data-testid="stChatMessage"]:has(
+  [data-testid="stChatMessageAvatarUser"]) {
+  background: var(--accent) !important;
+  border-radius: 14px 14px 3px 14px !important;
+  padding: 0.85rem 1.15rem !important;
+  margin-left: 18% !important;
+}
+[data-testid="stChatMessage"]:has(
+  [data-testid="stChatMessageAvatarUser"]) * {
+  color: #FFFFFF !important;
+}
+[data-testid="stChatMessage"]:has(
+  [data-testid="stChatMessageAvatarAssistant"]) {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-left: 3px solid var(--accent) !important;
+  border-radius: 3px 14px 14px 14px !important;
+  padding: 1rem 1.15rem !important;
+  margin-right: 12% !important;
+  box-shadow: 0 1px 3px rgba(18,20,28,0.04) !important;
+}
+[data-testid="stChatMessageAvatarUser"],
+[data-testid="stChatMessageAvatarAssistant"] {
+  display: none !important;
+}
 
-    /* Back button (Streamlit key=-based targeting) overrides the chip style above */
-    .st-key-back_btn button {
-      background: transparent !important;
-      border: none !important;
-      color: #64748B !important;
-      font-size: 0.85rem !important;
-      font-weight: 500 !important;
-      padding: 0.25rem 0.5rem !important;
-      box-shadow: none !important;
-      width: auto !important;
-    }
-    .st-key-back_btn button:hover {
-      background: #F1F5F9 !important;
-      color: #4F46E5 !important;
-      box-shadow: none !important;
-      transform: none !important;
-    }
+/* Signal readout - the signature element, replaces
+   confidence badge + match quality bar */
+.signal-readout {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  margin-top: 0.6rem;
+}
+.signal-readout .signal-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--ink-faint);
+}
+.signal-readout .signal-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600; font-size: 0.8rem;
+}
+.signal-readout .ticks {
+  display: flex; gap: 2px; align-items: flex-end;
+}
+.signal-readout .tick {
+  width: 3px; background: var(--border); border-radius: 1px;
+}
+.signal-readout.grounded .signal-value { color: var(--success); }
+.signal-readout.grounded .tick.on { background: var(--success); }
+.signal-readout.warning .signal-value { color: var(--warning); }
+.signal-readout.warning .tick.on { background: var(--warning); }
+.signal-readout.danger .signal-value { color: var(--danger); }
+.signal-readout.danger .tick.on { background: var(--danger); }
 
-    /* Hide chat avatars entirely */
-    [data-testid="stChatMessageAvatarUser"],
-    [data-testid="stChatMessageAvatarAssistant"] {
-      display: none !important;
-    }
+/* Source ticket cards */
+.ticket-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1.05rem;
+  margin-bottom: 0.6rem;
+}
+.ticket-card .ticket-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600; color: var(--ink); font-size: 0.8rem;
+}
+.ticket-card .ticket-category {
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 0.65rem; font-weight: 600;
+  padding: 0.15rem 0.5rem; border-radius: 100px;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ticket-card .ticket-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; color: var(--ink-faint);
+}
 
-    /* User chat bubble */
-    [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-      background-color: #4F46E5 !important;
-      border-radius: 18px 18px 4px 18px !important;
-      padding: 0.875rem 1.25rem !important;
-      margin-left: 20% !important;
-      margin-right: 0.5rem !important;
-      margin-bottom: 0.75rem !important;
-      border: none !important;
-      box-shadow: 0 2px 8px rgba(79,70,229,0.25) !important;
-    }
+/* Buttons */
+.stButton > button {
+  font-family: 'Inter', sans-serif !important;
+  border-radius: 8px !important;
+}
 
-    [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) * {
-      color: #FFFFFF !important;
-    }
+/* Suggestion chips on welcome screen */
+.stButton > button {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--ink) !important;
+  font-weight: 500 !important;
+  box-shadow: 0 1px 2px rgba(18,20,28,0.04) !important;
+}
+.stButton > button:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  box-shadow: 0 3px 10px rgba(36,83,255,0.12) !important;
+}
 
-    /* Assistant chat bubble */
-    [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
-      background-color: #FFFFFF !important;
-      border: 1px solid #E2E8F0 !important;
-      border-left: 3px solid #4F46E5 !important;
-      border-radius: 4px 18px 18px 18px !important;
-      padding: 1rem 1.25rem !important;
-      margin-right: 15% !important;
-      margin-left: 0.5rem !important;
-      margin-bottom: 0.75rem !important;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
-    }
+/* Chat input */
+[data-testid="stChatInput"] {
+  border: 1.5px solid var(--border) !important;
+  border-radius: 12px !important;
+  background: var(--surface) !important;
+}
+[data-testid="stChatInput"]:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft) !important;
+}
 
-    [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) p {
-      color: #1E293B !important;
-      font-size: 0.9rem !important;
-      line-height: 1.6 !important;
-    }
+/* System tab cards */
+.sys-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.2rem;
+}
+.sys-card h4 {
+  font-family: 'Space Grotesk', sans-serif !important;
+  font-size: 0.9rem !important; margin-bottom: 0.4rem !important;
+}
+.sys-card p {
+  color: var(--ink-muted) !important;
+  font-size: 0.82rem !important; line-height: 1.5 !important;
+}
 
-    /* Chat input */
-    [data-testid="stChatInput"] textarea {
-      background: #FFFFFF !important;
-      border: 1.5px solid #E2E8F0 !important;
-      border-radius: 12px !important;
-      font-family: 'Inter', sans-serif !important;
-      font-size: 0.9rem !important;
-      color: #0F172A !important;
-    }
-    [data-testid="stChatInput"] textarea:focus {
-      border-color: #4F46E5 !important;
-      box-shadow: 0 0 0 3px rgba(79,70,229,0.12) !important;
-    }
+/* Alerts */
+[data-testid="stAlert"] { border-radius: 8px !important; }
 
-    /* Source tickets toggle button */
-    [class*="st-key-toggle_sources_"] button {
-      background: #F8FAFC !important;
-      border: 1px solid #E2E8F0 !important;
-      border-radius: 10px !important;
-      color: #64748B !important;
-      font-size: 0.8rem !important;
-      font-weight: 500 !important;
-      font-family: 'Inter', sans-serif !important;
-      box-shadow: none !important;
-    }
-    [class*="st-key-toggle_sources_"] button:hover {
-      border-color: #CBD5E1 !important;
-      color: #0F172A !important;
-    }
+/* ---- App-specific widget fixes (make the design system above work with
+   this app's existing widgets; visual only, no new design patterns) ---- */
 
-    /* Spinner */
-    [data-testid="stSpinner"] svg {
-      color: #4F46E5 !important;
-    }
+/* Sidebar widgets need dark-panel treatment, not the light chip style */
+section[data-testid="stSidebar"] .stButton > button {
+  background: #161B22 !important;
+  color: var(--sidebar-ink) !important;
+  border: 1px solid var(--sidebar-border) !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+  border-color: var(--accent) !important;
+  color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSelectbox"] > div {
+  background: #161B22 !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 6px !important;
+}
 
-    /* Alerts */
-    [data-testid="stAlert"] {
-      border-radius: 10px !important;
-      border: none !important;
-    }
-    [data-testid="stInfo"] {
-      background: #EEF2FF !important;
-      border-left: 3px solid #4F46E5 !important;
-    }
-    [data-testid="stWarning"] {
-      background: #FFFBEB !important;
-      border-left: 3px solid #F59E0B !important;
-    }
+/* Back button ("New chat") - quiet text link, not a full chip */
+.st-key-back_btn button {
+  background: transparent !important;
+  border: none !important;
+  color: var(--ink-muted) !important;
+  box-shadow: none !important;
+  width: auto !important;
+}
+.st-key-back_btn button:hover {
+  color: var(--accent) !important;
+  box-shadow: none !important;
+}
 
-    /* Slide up animation */
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    [data-testid="stChatMessage"] {
-      animation: slideUp 0.25s ease-out;
-    }
+/* Source-tickets toggle button - subtle instrument control */
+[class*="st-key-toggle_sources_"] button {
+  background: var(--surface-alt) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--ink-muted) !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.72rem !important;
+  box-shadow: none !important;
+}
+[class*="st-key-toggle_sources_"] button:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
 
-    /* Tabs */
-    [data-testid="stTabs"] {
-      margin-bottom: 1rem !important;
-    }
-    [data-testid="stTabs"] button {
-      font-family: 'Inter', sans-serif !important;
-      font-size: 0.85rem !important;
-      font-weight: 500 !important;
-      color: #64748B !important;
-      border-radius: 8px 8px 0 0 !important;
-      padding: 0.5rem 1.25rem !important;
-      background: transparent !important;
-      border: none !important;
-      box-shadow: none !important;
-      transform: none !important;
-    }
-    [data-testid="stTabs"] button:hover {
-      color: #4F46E5 !important;
-      background: #F1F5F9 !important;
-      transform: none !important;
-      box-shadow: none !important;
-    }
-    [data-testid="stTabs"] button[aria-selected="true"] {
-      color: #4F46E5 !important;
-      border-bottom: 2px solid #4F46E5 !important;
-      font-weight: 600 !important;
-      background: transparent !important;
-    }
-    [data-testid="stTabsContent"] {
-      padding-top: 1.5rem !important;
-    }
-    </style>
+/* Chat input inner textarea */
+[data-testid="stChatInput"] textarea {
+  color: var(--ink) !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Spinner + tabs content spacing */
+[data-testid="stSpinner"] svg { color: var(--accent) !important; }
+[data-testid="stTabs"] button:hover { color: var(--accent) !important; }
+
+/* Slide-up entrance for chat messages */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+[data-testid="stChatMessage"] { animation: slideUp 0.25s ease-out; }
+</style>
     """,
     unsafe_allow_html=True,
 )
@@ -519,37 +552,31 @@ def confidence_from_score(score: float) -> str:
     return "Low"
 
 
-def render_confidence_badge(level: str) -> None:
-    st.markdown(CONFIDENCE_HTML[level], unsafe_allow_html=True)
-
-
-def render_quality_score(top_score: float) -> None:
-    similarity_pct = min(
-        int(top_score * 400), 99
-    ) if top_score > 0 else 0
-
+def render_signal_readout(level: str, top_score: float) -> None:
+    # The signature "signal readout" — one component replacing the old
+    # confidence badge + match-quality bar. The score/threshold LOGIC is
+    # unchanged (same similarity_pct formula and level bands); only the visual
+    # form changes: a mono percentage plus five rising tick marks.
+    similarity_pct = min(int(top_score * 400), 99) if top_score > 0 else 0
+    tick_count = min(5, max(1, round(similarity_pct / 20)))
+    ticks_html = "".join(
+        f'<div class="tick {"on" if i < tick_count else ""}" '
+        f'style="height:{8 + i * 3}px"></div>'
+        for i in range(5)
+    )
+    level_class = (
+        "grounded" if level == "High"
+        else "warning" if level == "Medium"
+        else "danger"
+    )
     st.markdown(
-        f'<div style="display:inline-flex;'
-        f'align-items:center;gap:0.5rem;'
-        f'margin-top:0.375rem;margin-left:0.5rem">'
-        f'<span style="font-size:0.7rem;'
-        f'color:#94A3B8">Match quality:</span>'
-        f'<div style="background:#F1F5F9;'
-        f'border-radius:100px;'
-        f'height:6px;width:80px;'
-        f'overflow:hidden;'
-        f'display:inline-block;'
-        f'vertical-align:middle">'
-        f'<div style="background:'
-        f'{"#10B981" if similarity_pct > 70 else "#F59E0B" if similarity_pct > 40 else "#EF4444"};'
-        f'height:100%;'
-        f'width:{similarity_pct}%"></div>'
-        f'</div>'
-        f'<span style="font-size:0.7rem;'
-        f'color:#64748B;font-weight:500">'
-        f'{similarity_pct}%</span>'
+        f'<div class="signal-readout {level_class}">'
+        f'<span class="signal-label">Confidence</span>'
+        f'<span class="signal-value">{similarity_pct}%</span>'
+        f'<div class="ticks">{ticks_html}</div>'
+        f'<span class="signal-label">{level.upper()}</span>'
         f'</div>',
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -567,20 +594,18 @@ def render_sources_expander(sources: list, msg_index) -> None:
         for src in sources:
             st.markdown(
                 f"""
-                <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;
-                            padding:1rem;margin-bottom:0.75rem;">
+                <div class="ticket-card">
                   <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-                    <strong style="color:#0F172A;font-size:0.9rem;">{escape_html(src["ticket_id"])}</strong>
-                    <span style="background:#EEF2FF;color:#4F46E5;font-size:0.7rem;font-weight:600;
-                                 border-radius:50px;padding:0.15rem 0.6rem;">{escape_html(src["category"])}</span>
+                    <span class="ticket-id">{escape_html(src["ticket_id"])}</span>
+                    <span class="ticket-category">{escape_html(src["category"])}</span>
                   </div>
-                  <div style="color:#374151;font-size:0.85rem;margin-bottom:0.35rem;">
-                    <b>Issue:</b> {escape_html(src["issue"])}
+                  <div style="color:var(--ink-muted);font-size:0.82rem;margin-bottom:0.35rem;">
+                    <b style="color:var(--ink);">Issue:</b> {escape_html(src["issue"])}
                   </div>
-                  <div style="color:#374151;font-size:0.85rem;margin-bottom:0.5rem;">
-                    <b>Resolution:</b> {escape_html(src["resolution"])}
+                  <div style="color:var(--ink-muted);font-size:0.82rem;margin-bottom:0.5rem;">
+                    <b style="color:var(--ink);">Resolution:</b> {escape_html(src["resolution"])}
                   </div>
-                  <div style="color:#94A3B8;font-size:0.78rem;">
+                  <div class="ticket-time">
                     Resolved in {src["resolved_in_minutes"]} min
                   </div>
                 </div>
@@ -627,8 +652,7 @@ def render_assistant_message(msg: dict, idx: int) -> None:
         if msg.get("pii_detected"):
             st.markdown(PII_HTML, unsafe_allow_html=True)
         if msg.get("confidence"):
-            render_confidence_badge(msg["confidence"])
-            render_quality_score(msg.get("confidence_score") or 0.0)
+            render_signal_readout(msg["confidence"], msg.get("confidence_score") or 0.0)
         if msg.get("escalation"):
             st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
         if msg.get("sources"):
@@ -756,8 +780,7 @@ def process_question(question: str, category: str, image_extract: str = "") -> N
             st.write_stream(stream_text(answer))
             if pii_detected:
                 st.markdown(PII_HTML, unsafe_allow_html=True)
-            render_confidence_badge(level)
-            render_quality_score(top_score)
+            render_signal_readout(level, top_score)
             if escalation:
                 st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
             if sources:
@@ -957,12 +980,15 @@ tab1, tab2 = st.tabs(["Chat", "System"])
 with tab1:
     # Main header — always shown, before any conditional logic ----------------------
     st.markdown(
-        "<div style='display:flex;align-items:center;gap:0.875rem;margin-bottom:1.5rem;'>"
-        "<div>"
-        "<div style='font-size:1.35rem;font-weight:700;color:#0F172A;'>IT Support AI Assistant</div>"
-        f"<div style='font-size:0.85rem;color:#64748B;'>{_ticket_count} incidents indexed · 8 categories · GPT-4o-mini</div>"
-        "</div>"
-        "</div>",
+        f'''
+<div class="app-header">
+  <div class="badge">IT</div>
+  <div>
+    <div class="title">IT Support AI Assistant</div>
+    <div class="subtitle">{_ticket_count} INCIDENTS · {len(CATEGORIES) - 1} CATEGORIES · GPT-4O-MINI</div>
+  </div>
+</div>
+''',
         unsafe_allow_html=True,
     )
 
@@ -1103,11 +1129,11 @@ with tab2:
     ds_col1, ds_col2, ds_col3, ds_col4, ds_col5 = st.columns(5)
     with ds_col1:
         st.markdown(f"""
-        <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #4F46E5;border-radius:10px;padding:1.25rem">
+        <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #2453FF;border-radius:10px;padding:1.25rem">
         <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Internal Synthetic</div>
         <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing.get('synthetic', 150)}</div>
         <div style="font-size:0.75rem;color:#64748B">Enterprise IT Support incident patterns</div>
-        <div style="margin-top:0.75rem;font-size:0.72rem;color:#4F46E5;font-weight:500">8 categories · Structured format</div>
+        <div style="margin-top:0.75rem;font-size:0.72rem;color:#2453FF;font-weight:500">8 categories · Structured format</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1165,7 +1191,7 @@ with tab2:
     st.markdown("""
     <div style="display:flex;gap:0;align-items:stretch;margin-bottom:0.75rem">
 
-      <div style="flex:1;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px 0 0 10px;padding:1rem">
+      <div style="flex:1;background:#E8EDFF;border:1px solid #C7D2FE;border-radius:10px 0 0 10px;padding:1rem">
         <div style="font-weight:700;font-size:0.82rem;color:#3730A3;margin-bottom:0.25rem">Retrieval Agent</div>
         <div style="font-size:0.72rem;color:#4338CA;line-height:1.5">
         Searches ChromaDB via semantic similarity. Returns top 3 tickets with scores. Broadens query on retry.</div>
