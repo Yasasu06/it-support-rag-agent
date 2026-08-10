@@ -77,6 +77,7 @@ All data passes through a normalization pipeline: text cleaning/truncation, PII 
 | Response Streaming | Token-by-token streaming via LangChain's `.stream()` generator |
 | Fine-tuning Pipeline | 120-example train / 30-example validation dataset prepared; job not yet submitted |
 | Multi-modal Input | Upload an error screenshot with (or instead of) your question — GPT-4o-mini vision extracts the issue, which flows through the same RAG pipeline (PII masking, verification, confidence scoring). Toggle with `ENABLE_IMAGE_UPLOAD`. |
+| Rate Limiting | Per-session sliding-window limit (default 15 requests / 60s) applied before any OpenAI call on every submission path (typed, screenshot, and suggestion chips), so abuse is blocked before it can incur cost. Isolated per session — one user never affects another. |
 
 ---
 
@@ -202,6 +203,9 @@ a variable. The System tab shows the active configuration at runtime.
 | `ENABLE_ADAPTIVE_RETRY` | `true` | Query-broadening retry loop; when false, the pipeline ends after the first pass |
 | `ENABLE_SERVICENOW_LIVE` | `true` | Live ServiceNow status tool; when false it reports the connection is disabled |
 | `ENABLE_IMAGE_UPLOAD` | `true` | Screenshot upload + vision extraction; when false the uploader is hidden |
+| `ENABLE_RATE_LIMITING` | `true` | Per-session rate limiting on question submission; when false, no limit is applied |
+| `RATE_LIMIT_MAX_REQUESTS` | `15` | Max requests allowed per session within the window |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Sliding-window length (seconds) for the rate limit |
 | `APP_ENVIRONMENT` | `production` | Free-text environment label shown in the System tab |
 
 Example — run a staging instance with a bigger model, verification off, and no
