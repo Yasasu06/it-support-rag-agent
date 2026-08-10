@@ -24,3 +24,4 @@ finetune/*.jsonl
 
 # Generated evaluation artifacts
 eval_harness/harness_results.json
+finetune/model_comparison_results.json
