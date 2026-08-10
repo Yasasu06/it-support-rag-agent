@@ -33,6 +33,7 @@ from rag import (
 from agent_pipeline import run_agent_pipeline, run_tool_agent
 from security import get_audit_summary
 from live_eval import get_live_eval_summary
+from error_handling import validate_user_input
 from connectors.servicenow_connector import (
     is_configured as servicenow_configured,
     test_connection as servicenow_test_connection,
@@ -646,6 +647,29 @@ def get_sources_and_top_score(query: str, category: str = "All Categories"):
 
 
 def process_question(question: str, category: str) -> None:
+    # Reject empty or oversized input before it enters the pipeline, so a bad
+    # submission gets a clear message instead of running the full agent chain.
+    is_valid, validation_error = validate_user_input(question)
+    if not is_valid:
+        st.session_state.messages.append({"role": "user", "content": question})
+        render_user_message(question)
+        with st.chat_message("assistant"):
+            st.warning(validation_error)
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": validation_error,
+                "question": question,
+                "confidence": None,
+                "confidence_score": None,
+                "sources": [],
+                "escalation": None,
+                "tier": None,
+                "pii_detected": [],
+            }
+        )
+        return
+
     analytical = is_analytical_query(question)
 
     # Analytical questions ("how many", "average resolution time", ...) go
@@ -1094,6 +1118,14 @@ with tab2:
         Real-time REST API connection to ServiceNow. Live incident counts and connection status checked on every query.</div>
         </div>
         """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
+    <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Resilience &amp; Failure Handling</div>
+    <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
+    Retry logic on transient API failures, graceful degradation to a safe escalated response on service outages, fail-closed PII masking, and input validation all prevent crashes from ever reaching users.</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
 
