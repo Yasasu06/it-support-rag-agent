@@ -250,9 +250,25 @@ h1, h2, h3, .display-text {
 }
 
 /* Sidebar - terminal panel */
+/* Force the sidebar to stay open and on-screen regardless of Streamlit's
+   collapse state. A persisted/collapsed state (remembered across reloads) or a
+   narrow-viewport auto-collapse otherwise slides it off-screen via transform /
+   zero width. The pre-redesign CSS pinned it open this way; the redesign
+   dropped it, which is why the sidebar "stopped rendering". */
 section[data-testid="stSidebar"] {
   background-color: var(--sidebar-bg) !important;
   border-right: 1px solid var(--sidebar-border) !important;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+  width: 300px !important;
+  min-width: 300px !important;
+  max-width: 300px !important;
+}
+section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
+  width: 300px !important;
+  min-width: 300px !important;
 }
 section[data-testid="stSidebar"] * {
   color: var(--sidebar-ink) !important;
