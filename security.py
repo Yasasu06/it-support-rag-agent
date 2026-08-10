@@ -12,6 +12,7 @@ Run directly to execute a small built-in test:
 """
 
 import json
+import logging
 import os
 from collections import Counter
 from datetime import datetime
@@ -19,6 +20,8 @@ from datetime import datetime
 from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
+
+logger = logging.getLogger(__name__)
 
 try:
     import streamlit as st
@@ -32,15 +35,29 @@ except Exception:
 # Presidio's AnalyzerEngine() defaults to the large spaCy model if no
 # nlp_engine is given. Pin to the small model explicitly so it matches what's
 # actually downloaded at startup (railway.toml), keeping memory usage down.
-_nlp_engine = NlpEngineProvider(
-    nlp_configuration={
-        "nlp_engine_name": "spacy",
-        "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-    }
-).create_engine()
+# Loading Presidio/spaCy is wrapped so a missing model or init failure at
+# deploy time is a controlled, logged condition rather than an import-time
+# crash of the whole app. mask_pii() then FAILS CLOSED (see below) — it never
+# silently passes unmasked PII downstream.
+try:
+    _nlp_engine = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+        }
+    ).create_engine()
 
-analyzer = AnalyzerEngine(nlp_engine=_nlp_engine)
-anonymizer = AnonymizerEngine()
+    analyzer = AnalyzerEngine(nlp_engine=_nlp_engine)
+    anonymizer = AnonymizerEngine()
+    _PII_AVAILABLE = True
+except Exception as e:  # pragma: no cover - only hit if spaCy/Presidio is broken
+    logger.error(
+        "Presidio/spaCy PII engine failed to load: %s. "
+        "mask_pii() will fail closed until this is resolved.", e
+    )
+    analyzer = None
+    anonymizer = None
+    _PII_AVAILABLE = False
 
 LOG_FILE = "query_audit_log.jsonl"
 
@@ -61,7 +78,17 @@ def mask_pii(text: str) -> tuple[str, list]:
     """
     Detects and masks PII in text.
     Returns: (masked_text, list of detected PII types)
+
+    Fails CLOSED: if the PII engine is unavailable we raise rather than return
+    unmasked text, so raw PII is never forwarded to the LLM. Upstream callers
+    (run_agent_pipeline) catch this and degrade gracefully.
     """
+    if not _PII_AVAILABLE:
+        raise RuntimeError(
+            "PII masking engine unavailable — refusing to process text to "
+            "avoid leaking unmasked PII (failing closed)."
+        )
+
     results = analyzer.analyze(
         text=text,
         entities=PII_ENTITIES,

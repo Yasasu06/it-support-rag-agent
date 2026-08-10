@@ -25,6 +25,12 @@ from langchain_core.runnables import RunnablePassthrough
 from langsmith import traceable
 from langsmith.wrappers import wrap_openai
 
+import logging
+
+from error_handling import with_retry, ServiceUnavailableError
+
+logger = logging.getLogger(__name__)
+
 import os
 try:
     import streamlit as st
@@ -50,6 +56,12 @@ SYSTEM_PROMPT = (
     "ticket information provided. Always cite the Ticket ID your answer "
     "is based on. If the answer is not in the provided tickets say: I "
     "don't have information on that in the enterprise knowledge base."
+)
+
+# Shown to the user when the LLM/backing service is unreachable after retries,
+# instead of surfacing a raw traceback.
+SERVICE_UNAVAILABLE_MESSAGE = (
+    "I'm having trouble connecting right now — please try again in a moment."
 )
 
 # Step 2: connect to the existing ChromaDB collection ----------------------
@@ -198,11 +210,22 @@ _conversation_memory = _ConversationBufferWindowMemory(k=5)
 
 
 # Step 7: public helpers ------------------------------------------------------
+@with_retry(max_attempts=2, delay_seconds=1.0)
+def _invoke_rag_chain(question: str) -> str:
+    """Single retried access point for the OpenAI-backed RAG chain, so a
+    transient API timeout is retried once before we give up."""
+    return _get_rag_chain().invoke(question)
+
+
 @traceable(name="IT Support RAG Query")
 def get_answer(question: str) -> str:
     """Return a grounded, citation-backed answer for the given question."""
     question = reformulate_query(question)
-    return _get_rag_chain().invoke(question)
+    try:
+        return _invoke_rag_chain(question)
+    except ServiceUnavailableError as e:
+        logger.error(f"get_answer failed after retries: {e}")
+        return SERVICE_UNAVAILABLE_MESSAGE
 
 
 def get_answer_with_memory(
@@ -240,7 +263,11 @@ def get_answer_with_memory(
         augmented_question = question
     augmented_question = reformulate_query(augmented_question)
 
-    answer = _get_rag_chain().invoke(augmented_question)
+    try:
+        answer = _invoke_rag_chain(augmented_question)
+    except ServiceUnavailableError as e:
+        logger.error(f"get_answer_with_memory failed after retries: {e}")
+        return SERVICE_UNAVAILABLE_MESSAGE
 
     _conversation_memory.save_context(
         {"input": question},
@@ -261,31 +288,37 @@ def get_answer_streaming(question: str) -> Generator[str, None, None]:
     Reuses the same retrieval + grounding prompt as get_answer/rag_chain
     so streamed answers stay consistent with the non-streaming path.
     """
-    reformulated = reformulate_query(question)
+    try:
+        reformulated = reformulate_query(question)
 
-    docs = _get_vectorstore().similarity_search(reformulated, k=TOP_K)
-    context = format_docs(docs)
+        docs = _get_vectorstore().similarity_search(reformulated, k=TOP_K)
+        context = format_docs(docs)
 
-    streaming_llm = ChatOpenAI(
-        model=CHAT_MODEL,
-        temperature=0.1,
-        streaming=True,
-        max_tokens=500,
-    )
+        streaming_llm = ChatOpenAI(
+            model=CHAT_MODEL,
+            temperature=0.1,
+            streaming=True,
+            max_tokens=500,
+        )
 
-    rendered_prompt = prompt.invoke({"context": context, "question": reformulated})
+        rendered_prompt = prompt.invoke({"context": context, "question": reformulated})
 
-    full_response = ""
-    for chunk in streaming_llm.stream(rendered_prompt):
-        token = chunk.content
-        if token:
-            full_response += token
-            yield token
+        full_response = ""
+        for chunk in streaming_llm.stream(rendered_prompt):
+            token = chunk.content
+            if token:
+                full_response += token
+                yield token
 
-    _conversation_memory.save_context(
-        {"input": question},
-        {"output": full_response},
-    )
+        _conversation_memory.save_context(
+            {"input": question},
+            {"output": full_response},
+        )
+    except Exception as e:
+        # Streaming can't be safely retried mid-flight (tokens already sent),
+        # so degrade to a clear message instead of crashing the UI.
+        logger.error(f"get_answer_streaming failed: {e}")
+        yield SERVICE_UNAVAILABLE_MESSAGE
 
 
 # Step 8: simple built-in test ---------------------------------------------

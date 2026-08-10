@@ -11,9 +11,12 @@ Run directly to execute a small built-in test:
     python3 agent_pipeline.py
 """
 
+import logging
 import re
 import time
 from typing import Optional, TypedDict
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
@@ -632,7 +635,7 @@ workflow.add_edge("prepare_retry", "retrieval")
 app_graph = workflow.compile()
 
 
-def run_agent_pipeline(question: str) -> dict:
+def _run_agent_pipeline_impl(question: str) -> dict:
     # PII check — never send raw PII to the LLM. If detected, the masked
     # version is what gets passed to the retrieval agent and onward.
     masked_question, pii_types = mask_pii(question)
@@ -704,6 +707,41 @@ def run_agent_pipeline(question: str) -> dict:
         "retry_history": result.get("retry_history", []),
         "sources": result.get("retrieved_sources", []),
     }
+
+
+# Degraded response returned when the pipeline hits a genuinely unhandled
+# failure (LLM outage, PII engine down, ChromaDB unavailable). Same schema as a
+# normal result so every caller keeps working; escalated so a human follows up.
+DEGRADED_PIPELINE_RESPONSE = {
+    "answer": (
+        "I'm having trouble processing your request right now — "
+        "please try again in a moment."
+    ),
+    "escalation": True,
+    "tier": "Tier 2",
+    "confidence_score": 0.0,
+    "pii_detected": [],
+    "grounded": False,
+    "verification_notes": "Pipeline error — degraded response returned.",
+    "retry_count": 0,
+    "retry_history": [],
+    "sources": [],
+}
+
+
+def run_agent_pipeline(question: str) -> dict:
+    """
+    Public entry point for the multi-agent pipeline. Wraps the implementation
+    so any genuinely unhandled failure returns a safe, escalated degraded
+    response instead of crashing the caller. The success path is unchanged.
+    """
+    try:
+        return _run_agent_pipeline_impl(question)
+    except Exception as e:
+        logger.error(
+            f"run_agent_pipeline failed, returning degraded response: {e}"
+        )
+        return dict(DEGRADED_PIPELINE_RESPONSE)
 
 
 # Simple built-in test ---------------------------------------------------------
