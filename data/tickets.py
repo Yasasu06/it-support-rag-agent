@@ -1700,4 +1700,35 @@ TICKETS = [
                        "and confirmed the audit log was reviewed and access revoked afterward.",
         "resolved_in_minutes": 40,
     },
+    # -------------------------------------------------- Software Access (install/admin)
+    {
+        "ticket_id": "TKT-151",
+        "category": "Software Access",
+        "issue": "Employee cannot install Adobe Acrobat Pro on their work laptop; the "
+                 "installer fails with 'You do not have permission to install this "
+                 "application. Contact your system administrator.' because standard users "
+                 "do not have local admin rights on managed machines.",
+        "resolution": "Confirmed the laptop was under the standard-user policy that blocks "
+                       "local-admin installs via SCCM. Rather than granting standing admin "
+                       "rights, pushed the approved Adobe Acrobat Pro package through the "
+                       "Company Portal / Software Center so it installed under the system "
+                       "account, then verified the app launched and activated against the "
+                       "enterprise license.",
+        "resolved_in_minutes": 35,
+    },
+    {
+        "ticket_id": "TKT-152",
+        "category": "Software Access",
+        "issue": "New contractor needs a business application installed on their work laptop, "
+                 "but every installer is blocked with 'This app has been blocked by your "
+                 "system administrator'; they have no local administrator rights to complete "
+                 "the setup themselves.",
+        "resolution": "Verified an AppLocker policy was blocking unsigned installers for "
+                       "standard users. Added the vetted application to the approved software "
+                       "catalog and deployed it through Software Center, then submitted a "
+                       "time-boxed elevated-install request for the one remaining unpackaged "
+                       "tool. The user completed installation without being granted permanent "
+                       "local admin rights.",
+        "resolved_in_minutes": 40,
+    },
 ]
