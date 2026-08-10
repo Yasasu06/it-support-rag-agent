@@ -99,6 +99,9 @@ class Config:
     ENABLE_SERVICENOW_LIVE = _get_env_bool(
         "ENABLE_SERVICENOW_LIVE", True
     )
+    ENABLE_IMAGE_UPLOAD = _get_env_bool(
+        "ENABLE_IMAGE_UPLOAD", True
+    )
 
     # Environment identification
     ENVIRONMENT = _get_env_str(
@@ -146,6 +149,8 @@ class Config:
                 cls.ENABLE_ADAPTIVE_RETRY,
             "servicenow_live_enabled":
                 cls.ENABLE_SERVICENOW_LIVE,
+            "image_upload_enabled":
+                cls.ENABLE_IMAGE_UPLOAD,
             "environment": cls.ENVIRONMENT,
         }
 
