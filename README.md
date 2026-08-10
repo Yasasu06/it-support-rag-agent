@@ -241,6 +241,15 @@ python3 eval_harness/compare_runs.py old.json new.json
 Each run writes a timestamped `eval_harness/harness_results.json` with
 per-dimension averages plus full per-question detail.
 
+**Reading the groundedness/relevance numbers honestly:** the raw averages
+(groundedness **0.65**, relevance **0.635**) are pulled down by the four
+correctly-refused out-of-scope questions, which score 0 by construction — there
+is no context to be grounded in and refusing is the right behaviour. Excluding
+only those correct refusals (never false refusals, which are real misses),
+the averages are **0.81 groundedness** and **0.79 relevance**. Run
+`python3 eval_harness/analyze.py` to see both numbers side by side plus the
+genuine in-scope weak spots, which are kept in both figures rather than hidden.
+
 This is **separate from the always-on live evaluation** (`live_eval.py`), which
 scores real production queries continuously as they happen. The harness is for
 deliberate, structured test runs against a fixed question set — the kind you run
