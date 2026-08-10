@@ -12,6 +12,7 @@ Run with:
 import html
 import os
 import json as _json
+import uuid
 
 from dotenv import load_dotenv
 
@@ -41,6 +42,7 @@ from image_processing import (
     build_combined_query,
 )
 from rate_limiter import check_rate_limit, get_rate_limit_status
+from analytics import log_visit, get_analytics_summary
 
 import logging
 
@@ -827,6 +829,50 @@ if "prefill" not in st.session_state:
     st.session_state.prefill = None
 
 
+# Anonymous per-session visit logging ---------------------------------------------
+# Logs a timestamp + random session id once per browser session (no PII, no IP).
+# Guarded by "session_id not in session_state" so it fires once per session, not
+# on every question or rerun.
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+    log_visit(st.session_state.session_id)
+
+# Private, password-protected analytics view ---------------------------------------
+# Only appears when the URL carries ?admin=<secret> matching the ADMIN_ANALYTICS_KEY
+# env var. Regular users never see it and cannot reach it without the secret; if
+# the env var is unset, the feature is entirely inert.
+ADMIN_KEY = os.getenv("ADMIN_ANALYTICS_KEY", "")
+if ADMIN_KEY and st.query_params.get("admin") == ADMIN_KEY:
+    st.markdown("## Private Analytics (Admin Only)")
+    summary = get_analytics_summary()
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Visits", summary["total_visits"])
+    with col2:
+        st.metric("Unique Sessions", summary["unique_sessions"])
+    with col3:
+        st.metric("Visits Today", summary["visits_today"])
+
+    st.markdown("### Recent Visit Log")
+    if summary["recent_visits"]:
+        for visit in summary["recent_visits"]:
+            st.text(
+                f"{visit['timestamp']} - "
+                f"session: {visit['session_id'][:8]}..."
+            )
+    else:
+        st.text("No visits logged yet.")
+
+    st.markdown("---")
+    st.markdown(
+        "*This is a private admin view. "
+        "Remove ?admin=... from the URL to return to "
+        "the normal app.*"
+    )
+    st.stop()
+
+
 # Sidebar -------------------------------------------------------------------------
 with st.sidebar:
     st.markdown(
@@ -1259,6 +1305,14 @@ with tab2:
     <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Multi-modal Input</div>
     <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
     Users can upload error screenshots alongside their question. GPT-4o-mini vision extracts the technical issue, which flows through the same RAG pipeline as typed questions — including PII masking, verification, and confidence scoring.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
+    <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Testing, CI/CD &amp; Evaluation Harness</div>
+    <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
+    A pytest suite of fast unit tests (zero API cost) runs automatically on every push via GitHub Actions, alongside integration tests for the live pipeline. Beyond pass/fail, an offline evaluation harness scores answers on five independent dimensions — groundedness, relevance, citation accuracy, refusal correctness, and latency — for structured before/after comparison across changes.</div>
     </div>
     """, unsafe_allow_html=True)
 
