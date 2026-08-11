@@ -673,6 +673,30 @@ def render_signal_readout(level: str, top_score: float) -> None:
     )
 
 
+def render_retry_badge(retry_count) -> None:
+    # Surfaces the adaptive-retry system: when the first retrieval had low
+    # confidence, the pipeline broadened the query and searched again. This just
+    # reads the retry_count the pipeline already returns — no logic change. Shown
+    # only when it actually happened; nothing rendered when retry_count is 0.
+    count = retry_count or 0
+    if count <= 0:
+        return
+    label = f"{count} retr{'y' if count == 1 else 'ies'}"
+    st.markdown(
+        f'<div style="margin-top:0.4rem;margin-left:0.5rem;">'
+        f'<span style="display:inline-flex;align-items:center;gap:0.35rem;'
+        f'background:var(--surface-alt);border:1px solid var(--border);'
+        f'border-radius:100px;padding:0.2rem 0.6rem;'
+        f"font-family:'JetBrains Mono',monospace;font-size:0.62rem;"
+        f'text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-faint);">'
+        f'<span style="width:5px;height:5px;border-radius:50%;'
+        f'background:#2453FF;flex-shrink:0;"></span>'
+        f'Broadened search · {label}'
+        f'</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_sources_expander(sources: list, msg_index) -> None:
     state_key = f"show_sources_{msg_index}"
     if state_key not in st.session_state:
@@ -753,6 +777,7 @@ def render_assistant_message(msg: dict, idx: int) -> None:
             st.markdown(PII_HTML, unsafe_allow_html=True)
         if msg.get("confidence"):
             render_signal_readout(msg["confidence"], msg.get("confidence_score") or 0.0)
+            render_retry_badge(msg.get("retry_count", 0))
         if msg.get("escalation"):
             st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
         if msg.get("sources"):
@@ -881,6 +906,7 @@ def process_question(question: str, category: str, image_extract: str = "") -> N
             if pii_detected:
                 st.markdown(PII_HTML, unsafe_allow_html=True)
             render_signal_readout(level, top_score)
+            render_retry_badge(result.get("retry_count", 0))
             if escalation:
                 st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
             if sources:
@@ -897,6 +923,7 @@ def process_question(question: str, category: str, image_extract: str = "") -> N
                     "escalation": escalation,
                     "tier": tier,
                     "pii_detected": pii_detected,
+                    "retry_count": result.get("retry_count", 0),
                 }
             )
         except Exception:
@@ -1592,6 +1619,39 @@ with tab2:
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+    st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
+
+    # Section 4c: Adaptive retry rate (derived from this session's messages) --------
+    st.markdown("### Adaptive Retry")
+    _answered = [
+        m for m in st.session_state.get("messages", [])
+        if m.get("role") == "assistant" and "retry_count" in m
+    ]
+    if _answered:
+        _retried = sum(1 for m in _answered if (m.get("retry_count") or 0) > 0)
+        _retry_rate = int(round(100 * _retried / len(_answered)))
+        rr_col1, rr_col2, rr_col3 = st.columns(3)
+        with rr_col1:
+            st.metric("Retry Rate", f"{_retry_rate}%")
+        with rr_col2:
+            st.metric("Broadened", _retried)
+        with rr_col3:
+            st.metric("Queries", len(_answered))
+        st.markdown(
+            f"<p style='color:#94A3B8;font-size:0.78rem'>"
+            f"{_retry_rate}% of queries this session needed a broadened search — a "
+            "low first-pass confidence triggered an automatic query rewrite and "
+            "second retrieval attempt.</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<p style='color:#94A3B8;font-size:0.8rem'>"
+            "No queries yet this session — ask a question in the Chat tab to see the "
+            "adaptive-retry rate.</p>",
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
 
