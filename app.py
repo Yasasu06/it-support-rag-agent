@@ -363,40 +363,40 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] {
 }
 
 /* Header bar */
-.app-header {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 1.1rem 1.3rem;
-  margin-bottom: 1.5rem;
-  border-radius: 14px;
-  background: linear-gradient(120deg, #1A2E6E 0%, #2D1B69 55%, #3D1A5C 100%);
-  box-shadow: 0 4px 16px rgba(10, 14, 26, 0.3);
+div.app-header, .app-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.9rem !important;
+  padding: 1.1rem 1.3rem !important;
+  margin-bottom: 1.5rem !important;
+  border-radius: 14px !important;
+  background: linear-gradient(120deg, #1A2E6E 0%, #2D1B69 55%, #3D1A5C 100%) !important;
+  box-shadow: 0 4px 16px rgba(10, 14, 26, 0.3) !important;
 }
 .app-header .badge {
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.2) !important;
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
-  color: #FFFFFF;
+  color: #FFFFFF !important;
   font-size: 0.95rem;
 }
 .app-header .title {
   font-family: 'Space Grotesk', sans-serif;
   font-weight: 700;
   font-size: 1.05rem;
-  color: #FFFFFF;
+  color: #FFFFFF !important;
 }
 .app-header .subtitle {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.7rem;
-  color: rgba(255,255,255,0.85);
+  color: rgba(255,255,255,0.85) !important;
 }
 
 /* Chat bubbles */
@@ -600,22 +600,20 @@ section[data-testid="stSidebar"] [data-testid="stSelectbox"] > div {
    for .st-key-back_btn / st-key-toggle_sources_. Placed last so it wins over
    the generic .stButton > button rules. (Wrapping buttons in markdown <div>s is
    unreliable in Streamlit — the tags don't actually enclose the widget DOM.) */
-.st-key-chip_1 button {
-  border-left: 4px solid #2453FF !important; background: var(--surface) !important; color: #2453FF !important;
+div[class*="st-key-chip_1"] button, div[class*="st-key-chip_1"] > div > button {
+  border-left: 4px solid #2453FF !important; background: #FFFFFF !important; background-color: #FFFFFF !important; color: #2453FF !important; font-weight: 600 !important; text-align: left !important;
 }
-.st-key-chip_2 button {
-  border-left: 4px solid #C026D3 !important; background: var(--surface) !important; color: #C026D3 !important;
+div[class*="st-key-chip_2"] button, div[class*="st-key-chip_2"] > div > button {
+  border-left: 4px solid #C026D3 !important; background: #FFFFFF !important; background-color: #FFFFFF !important; color: #C026D3 !important; font-weight: 600 !important; text-align: left !important;
 }
-.st-key-chip_3 button {
-  border-left: 4px solid #DB2777 !important; background: var(--surface) !important; color: #DB2777 !important;
+div[class*="st-key-chip_3"] button, div[class*="st-key-chip_3"] > div > button {
+  border-left: 4px solid #DB2777 !important; background: #FFFFFF !important; background-color: #FFFFFF !important; color: #DB2777 !important; font-weight: 600 !important; text-align: left !important;
 }
-.st-key-chip_4 button {
-  border-left: 4px solid #0891B2 !important; background: var(--surface) !important; color: #0891B2 !important;
+div[class*="st-key-chip_4"] button, div[class*="st-key-chip_4"] > div > button {
+  border-left: 4px solid #0891B2 !important; background: #FFFFFF !important; background-color: #FFFFFF !important; color: #0891B2 !important; font-weight: 600 !important; text-align: left !important;
 }
-[class*="st-key-chip_"] button { font-weight: 600 !important; text-align: left !important; }
-[class*="st-key-chip_"] button:hover {
-  filter: brightness(0.97);
-  box-shadow: 0 3px 10px rgba(18,20,28,0.10) !important;
+div[class*="st-key-chip_"] button:hover, div[class*="st-key-chip_"] > div > button:hover {
+  filter: brightness(0.97) !important; box-shadow: 0 3px 10px rgba(18,20,28,0.10) !important;
 }
 </style>
     """,
