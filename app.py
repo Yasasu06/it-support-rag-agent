@@ -118,6 +118,27 @@ SUGGESTIONS = [
     "Outlook not syncing emails",
 ]
 
+# Bold per-category color coding (WCAG AA text contrast; avoids pure red/green).
+CATEGORY_COLORS = {
+    "VPN": {"bg": "#E8EDFF", "text": "#2453FF", "solid": "#2453FF"},
+    "Password": {"bg": "#F3E8FE", "text": "#7C3AED", "solid": "#7C3AED"},
+    "Software Access": {"bg": "#E3F6EE", "text": "#0F9D6C", "solid": "#0F9D6C"},
+    "Hardware": {"bg": "#FDECE0", "text": "#E8590C", "solid": "#E8590C"},
+    "Email": {"bg": "#E0F7FB", "text": "#0891B2", "solid": "#0891B2"},
+    "Printer": {"bg": "#FBE5FA", "text": "#C026D3", "solid": "#C026D3"},
+    "Network": {"bg": "#FDF3D9", "text": "#CA8A04", "solid": "#CA8A04"},
+    "ERP Access": {"bg": "#FCE4EF", "text": "#DB2777", "solid": "#DB2777"},
+}
+
+
+def get_category_color(category: str) -> dict:
+    """Return color dict for a category, default to VPN blue if not found."""
+    return CATEGORY_COLORS.get(
+        category,
+        {"bg": "#E8EDFF", "text": "#2453FF", "solid": "#2453FF"},
+    )
+
+
 TICKETS_BY_ID = {t["ticket_id"]: t for t in TICKETS}
 
 # level -> exact badge HTML
@@ -242,7 +263,20 @@ h1, h2, h3, .display-text {
   display: none !important;
 }
 
-.stApp { background-color: var(--bg) !important; }
+.stApp {
+  background:
+    radial-gradient(
+      ellipse 1200px 800px at 20% -10%,
+      rgba(36,83,255,0.06) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 1000px 600px at 100% 10%,
+      rgba(192,38,212,0.05) 0%,
+      transparent 50%
+    ),
+    #F7F7F4 !important;
+}
 
 .main .block-container {
   max-width: 820px !important;
@@ -287,6 +321,15 @@ section[data-testid="stSidebar"] hr {
   border-color: var(--sidebar-border) !important;
 }
 
+/* Sidebar accent glow (new rule; does NOT modify the force-open block above) */
+section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
+  background: linear-gradient(
+    180deg,
+    rgba(36,83,255,0.15) 0%,
+    transparent 200px
+  ), var(--sidebar-bg);
+}
+
 /* Sidebar metric cards - instrument readout style */
 section[data-testid="stSidebar"] [data-testid="stMetric"] {
   background: #161B22 !important;
@@ -323,24 +366,39 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] {
 
 /* Header bar */
 .app-header {
-  display: flex; align-items: center; gap: 0.85rem;
-  padding-bottom: 1.25rem; margin-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1.1rem 1.3rem;
+  margin-bottom: 1.5rem;
+  border-radius: 14px;
+  background: linear-gradient(120deg, #2453FF 0%, #7C3AED 55%, #C026D3 100%);
+  box-shadow: 0 8px 24px rgba(36,83,255,0.18);
 }
 .app-header .badge {
-  width: 38px; height: 38px; border-radius: 8px;
-  background: var(--accent-soft);
-  display: flex; align-items: center; justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.2);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: 'JetBrains Mono', monospace;
-  font-weight: 600; color: var(--accent); font-size: 0.9rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  font-size: 0.95rem;
 }
 .app-header .title {
   font-family: 'Space Grotesk', sans-serif;
-  font-weight: 700; font-size: 1rem; color: var(--ink);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #FFFFFF;
 }
 .app-header .subtitle {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem; color: var(--ink-faint);
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.85);
 }
 
 /* Chat bubbles */
@@ -395,12 +453,12 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] {
 .signal-readout .tick {
   width: 3px; background: var(--border); border-radius: 1px;
 }
-.signal-readout.grounded .signal-value { color: var(--success); }
-.signal-readout.grounded .tick.on { background: var(--success); }
-.signal-readout.warning .signal-value { color: var(--warning); }
-.signal-readout.warning .tick.on { background: var(--warning); }
-.signal-readout.danger .signal-value { color: var(--danger); }
-.signal-readout.danger .tick.on { background: var(--danger); }
+.signal-readout.grounded .signal-value { color: #059669 !important; }
+.signal-readout.grounded .tick.on { background: #059669; }
+.signal-readout.warning .signal-value { color: #D97706 !important; }
+.signal-readout.warning .tick.on { background: #D97706; }
+.signal-readout.danger .signal-value { color: #DC2626 !important; }
+.signal-readout.danger .tick.on { background: #DC2626; }
 
 /* Source ticket cards */
 .ticket-card {
@@ -538,6 +596,29 @@ section[data-testid="stSidebar"] [data-testid="stSelectbox"] > div {
   to { opacity: 1; transform: translateY(0); }
 }
 [data-testid="stChatMessage"] { animation: slideUp 0.25s ease-out; }
+
+/* Colorful welcome-screen suggestion chips. Targeted by Streamlit's per-widget
+   key class (.st-key-chip_N) — the same reliable pattern this app already uses
+   for .st-key-back_btn / st-key-toggle_sources_. Placed last so it wins over
+   the generic .stButton > button rules. (Wrapping buttons in markdown <div>s is
+   unreliable in Streamlit — the tags don't actually enclose the widget DOM.) */
+.st-key-chip_1 button {
+  border-left: 4px solid #2453FF !important; background: #E8EDFF !important; color: #2453FF !important;
+}
+.st-key-chip_2 button {
+  border-left: 4px solid #C026D3 !important; background: #FBE5FA !important; color: #C026D3 !important;
+}
+.st-key-chip_3 button {
+  border-left: 4px solid #DB2777 !important; background: #FCE4EF !important; color: #DB2777 !important;
+}
+.st-key-chip_4 button {
+  border-left: 4px solid #0891B2 !important; background: #E0F7FB !important; color: #0891B2 !important;
+}
+[class*="st-key-chip_"] button { font-weight: 600 !important; text-align: left !important; }
+[class*="st-key-chip_"] button:hover {
+  filter: brightness(0.97);
+  box-shadow: 0 3px 10px rgba(18,20,28,0.10) !important;
+}
 </style>
     """,
     unsafe_allow_html=True,
@@ -608,12 +689,19 @@ def render_sources_expander(sources: list, msg_index) -> None:
 
     if st.session_state[state_key]:
         for src in sources:
+            colors = get_category_color(src.get("category", "VPN"))
             st.markdown(
                 f"""
-                <div class="ticket-card">
+                <div class="ticket-card" style="
+                    border-left: 4px solid {colors['solid']};
+                    background: linear-gradient(135deg, {colors['bg']} 0%, #FFFFFF 40%);
+                ">
                   <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
                     <span class="ticket-id">{escape_html(src["ticket_id"])}</span>
-                    <span class="ticket-category">{escape_html(src["category"])}</span>
+                    <span style="
+                        background:{colors['solid']};color:#FFFFFF;font-size:0.65rem;font-weight:600;
+                        padding:0.2rem 0.6rem;border-radius:100px;font-family:'JetBrains Mono',monospace;
+                        text-transform:uppercase;letter-spacing:0.04em;">{escape_html(src["category"].upper())}</span>
                   </div>
                   <div style="color:var(--ink-muted);font-size:0.82rem;margin-bottom:0.35rem;">
                     <b style="color:var(--ink);">Issue:</b> {escape_html(src["issue"])}
