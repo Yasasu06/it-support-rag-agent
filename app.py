@@ -223,12 +223,12 @@ st.markdown(
   --ink: #12141C;
   --ink-muted: #5B6072;
   --ink-faint: #9599A8;
-  --sidebar-bg: #0D1117;
+  --sidebar-bg: #0A0E1A;
   --sidebar-ink: #C9D1D9;
   --sidebar-muted: #6E7681;
-  --sidebar-border: #21262D;
+  --sidebar-border: #1E2433;
   --accent: #2453FF;
-  --accent-soft: #E8EDFF;
+  --accent-soft: #EEF1FF;
   --success: #0F9D6C;
   --success-soft: #E3F6EE;
   --warning: #C97A1A;
@@ -266,14 +266,9 @@ h1, h2, h3, .display-text {
 .stApp {
   background:
     radial-gradient(
-      ellipse 1200px 800px at 20% -10%,
-      rgba(36,83,255,0.06) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse 1000px 600px at 100% 10%,
-      rgba(192,38,212,0.05) 0%,
-      transparent 50%
+      ellipse 1400px 700px at 15% -5%,
+      rgba(36, 83, 255, 0.04) 0%,
+      transparent 55%
     ),
     #F7F7F4 !important;
 }
@@ -321,19 +316,22 @@ section[data-testid="stSidebar"] hr {
   border-color: var(--sidebar-border) !important;
 }
 
-/* Sidebar accent glow (new rule; does NOT modify the force-open block above) */
+/* Sidebar structural depth gradient (new rule; does NOT modify the force-open
+   block above) — a slightly lighter navy at the top settling into the sidebar
+   background, so it reads as depth rather than a colored glow. */
 section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
   background: linear-gradient(
     180deg,
-    rgba(36,83,255,0.15) 0%,
-    transparent 200px
-  ), var(--sidebar-bg);
+    #111827 0px,
+    var(--sidebar-bg) 120px
+  );
 }
 
 /* Sidebar metric cards - instrument readout style */
 section[data-testid="stSidebar"] [data-testid="stMetric"] {
-  background: #161B22 !important;
+  background: #111827 !important;
   border: 1px solid var(--sidebar-border) !important;
+  border-left: 2px solid #2453FF !important;
   border-radius: 6px !important;
   padding: 0.7rem 0.9rem !important;
 }
@@ -372,8 +370,8 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] {
   padding: 1.1rem 1.3rem;
   margin-bottom: 1.5rem;
   border-radius: 14px;
-  background: linear-gradient(120deg, #2453FF 0%, #7C3AED 55%, #C026D3 100%);
-  box-shadow: 0 8px 24px rgba(36,83,255,0.18);
+  background: linear-gradient(120deg, #1A2E6E 0%, #2D1B69 55%, #3D1A5C 100%);
+  box-shadow: 0 4px 16px rgba(10, 14, 26, 0.3);
 }
 .app-header .badge {
   width: 42px;
@@ -603,16 +601,16 @@ section[data-testid="stSidebar"] [data-testid="stSelectbox"] > div {
    the generic .stButton > button rules. (Wrapping buttons in markdown <div>s is
    unreliable in Streamlit — the tags don't actually enclose the widget DOM.) */
 .st-key-chip_1 button {
-  border-left: 4px solid #2453FF !important; background: #E8EDFF !important; color: #2453FF !important;
+  border-left: 4px solid #2453FF !important; background: var(--surface) !important; color: #2453FF !important;
 }
 .st-key-chip_2 button {
-  border-left: 4px solid #C026D3 !important; background: #FBE5FA !important; color: #C026D3 !important;
+  border-left: 4px solid #C026D3 !important; background: var(--surface) !important; color: #C026D3 !important;
 }
 .st-key-chip_3 button {
-  border-left: 4px solid #DB2777 !important; background: #FCE4EF !important; color: #DB2777 !important;
+  border-left: 4px solid #DB2777 !important; background: var(--surface) !important; color: #DB2777 !important;
 }
 .st-key-chip_4 button {
-  border-left: 4px solid #0891B2 !important; background: #E0F7FB !important; color: #0891B2 !important;
+  border-left: 4px solid #0891B2 !important; background: var(--surface) !important; color: #0891B2 !important;
 }
 [class*="st-key-chip_"] button { font-weight: 600 !important; text-align: left !important; }
 [class*="st-key-chip_"] button:hover {
@@ -694,7 +692,7 @@ def render_sources_expander(sources: list, msg_index) -> None:
                 f"""
                 <div class="ticket-card" style="
                     border-left: 4px solid {colors['solid']};
-                    background: linear-gradient(135deg, {colors['bg']} 0%, #FFFFFF 40%);
+                    background: linear-gradient(135deg, {colors['bg']}59 0%, #FFFFFF 35%);
                 ">
                   <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
                     <span class="ticket-id">{escape_html(src["ticket_id"])}</span>
@@ -1005,8 +1003,13 @@ with st.sidebar:
     st.markdown(
         "<div style='display:flex;align-items:center;gap:0.6rem;'>"
         "<div>"
+        "<div style='display:flex;align-items:center;gap:0.5rem;'>"
+        "<div style='width:7px;height:7px;border-radius:50%;background:#10B981;"
+        "box-shadow:0 0 6px rgba(16,185,129,0.6);flex-shrink:0;'></div>"
         "<div style='font-size:1.1rem;font-weight:700;color:#F1F5F9;'>IT Support AI</div>"
-        "<div style='font-size:0.75rem;color:#94A3B8;'>Powered by RAG · GPT-4o-mini</div>"
+        "</div>"
+        "<div style='font-size:0.75rem;color:#94A3B8;margin-top:0.15rem;'>"
+        "Powered by RAG · GPT-4o-mini</div>"
         "</div>"
         "</div>",
         unsafe_allow_html=True,
@@ -1026,7 +1029,14 @@ with st.sidebar:
     category = st.selectbox("Filter by category", CATEGORIES, key="category_filter")
     st.divider()
 
-    st.markdown("**Knowledge Base**")
+    st.markdown(
+        "<div style='border-left:2px solid #2453FF;padding-left:0.6rem;"
+        "margin-bottom:0.5rem;'>"
+        "<span style='font-size:0.7rem;font-weight:700;letter-spacing:0.08em;"
+        "text-transform:uppercase;color:#94A3B8;'>Knowledge Base</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     col_a, col_b = st.columns(2)
     with col_a:
         st.metric("Tickets", _ticket_count)
@@ -1045,7 +1055,14 @@ with st.sidebar:
     summary = get_audit_summary()
     if summary["total_queries"] > 0:
         st.divider()
-        st.markdown("**System Health**")
+        st.markdown(
+            "<div style='border-left:2px solid #10B981;padding-left:0.6rem;"
+            "margin-bottom:0.5rem;'>"
+            "<span style='font-size:0.7rem;font-weight:700;letter-spacing:0.08em;"
+            "text-transform:uppercase;color:#94A3B8;'>System Health</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
         col_c, col_d = st.columns(2)
         with col_c:
             st.metric("Queries", summary["total_queries"])
