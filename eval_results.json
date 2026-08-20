@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-09T22:21:21.295015",
+  "timestamp": "2026-08-13T14:19:38.998785",
   "total_questions": 20,
   "passed": 18,
   "failed": 2,
@@ -14,7 +14,7 @@
       "question": "My printer is not printing anything",
       "expected_category": "Printer",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-031, the issue of the printer not printing could be due to the print spooler on the print server hanging, which can cause print jobs to sit in the queue with an 'Error' status. The resolution involved clearing the stuck jobs, restarting the Print Spooler service, and confirming that a test page printed successfully. If you're experiencing similar issues, you may want to check the print spooler status.",
+      "answer": "Based on Ticket ID: TKT-031, the issue of the printer not printing could be due to the print spooler on the print server hanging, which can cause print jobs to sit in the queue with an 'Error' status. The resolution involved clearing the stuck jobs, restarting the Print Spooler service, and confirming that a test page printed successfully. \n\nIf you are experiencing similar issues, you may want to check the print spooler status.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -23,7 +23,7 @@
       "question": "I cannot access SAP after my account was locked",
       "expected_category": "ERP Access",
       "should_answer": true,
-      "answer": "To unlock your SAP account, it was confirmed that accounts can be auto-locked by the dormancy policy after 90 days of inactivity. In a similar case (Ticket ID: TKT-048), the account was reactivated in SU01, and the user was required to log in and change their password to confirm access was restored. \n\nIf your account is locked, you may need to have it reactivated and follow the necessary steps to regain access.",
+      "answer": "To unlock your SAP account, it can be reactivated if it was auto-locked due to dormancy or if you forgot your password. For an account locked due to dormancy, it can be reactivated in transaction SU01, and you will need to log in and change your password to confirm access is restored. This is based on Ticket ID: TKT-048. If your account is locked due to a forgotten password, the password can be reset in transaction SU01 as well. This is based on Ticket ID: TKT-012.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -50,7 +50,7 @@
       "question": "I need access to Power BI for my team",
       "expected_category": "Software Access",
       "should_answer": true,
-      "answer": "To grant Power BI access to your team, you can follow a similar process as outlined in Ticket ID: TKT-014. In that case, the analyst was assigned a Power BI Pro license in the Microsoft 365 admin center and added to the Finance workspace as a Viewer. Ensure that your team members have the appropriate licenses and are added to the necessary workspaces. \n\nIf you need further assistance, please refer to Ticket ID: TKT-078, where a user regained access after a manual sync was performed due to a failed sync job. \n\nFor more detailed steps, you may need to consult your IT department or the Microsoft 365 admin center.",
+      "answer": "To grant Power BI access to your team, you can follow a similar process as outlined in Ticket ID: TKT-014. In that case, the analyst was assigned a Power BI Pro license in the Microsoft 365 admin center and added to the Finance workspace as a Viewer. Ensure that your team members have the appropriate licenses and are added to the relevant workspaces. \n\nIf you need further assistance, please refer to the specific licensing requirements and workspace permissions.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -59,7 +59,7 @@
       "question": "Network drive is not showing up on my computer",
       "expected_category": "Network",
       "should_answer": true,
-      "answer": "Based on Ticket ID: GH-MIC-239224, the issue regarding accessing a network share may relate to your problem with the network drive not appearing. The resolution indicated that the problem was related to UNC network shares. It suggests ensuring that the correct URL format is used when accessing network shares. \n\nIf you are having trouble with a network drive, make sure you are using the correct path and that the share is properly configured. \n\nIf you need further assistance, please provide more details about the issue.",
+      "answer": "Based on Ticket ID: GH-MIC-239224, the issue involves accessing a network share, which is related to troubleshooting network drives. The resolution indicates that the problem was related to UNC network shares. While it doesn't provide a direct troubleshooting guide for a missing network drive, it suggests that issues may arise from how the network share is accessed. \n\nFor troubleshooting, ensure that you are using the correct format for the network share URL and check if the share is properly configured. \n\nIf you need further assistance, please refer to the specifics of your network configuration.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -77,7 +77,7 @@
       "question": "VPN disconnects every few minutes while working from home",
       "expected_category": "VPN",
       "should_answer": true,
-      "answer": "To fix frequent VPN disconnects while working from home, you can refer to Ticket ID: TKT-004. The resolution involved tracing the drops to an aggressive idle-timeout on the user's consumer router and a low DPD value in the group policy. The solution was to raise the dead-peer-detection interval on the VPN profile and advise disabling the router's Wi-Fi power-saving mode, which stabilized the session.",
+      "answer": "To address frequent VPN disconnections during remote work sessions, you can refer to Ticket ID: TKT-004. The resolution involved tracing the drops to an aggressive idle-timeout on the user's consumer router and a low DPD value in the group policy. The solution was to raise the dead-peer-detection interval on the VPN profile and advise disabling the router's Wi-Fi power-saving mode, which stabilized the session.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -86,7 +86,7 @@
       "question": "Printer shows offline but is turned on",
       "expected_category": "Printer",
       "should_answer": true,
-      "answer": "The printer is showing offline because it had picked up a new DHCP address while its print queue still pointed at the old IP. A DHCP reservation was set for the printer's MAC, the port on the print server was updated to the new address, and it was confirmed that the queue came back online for all users. This information is based on Ticket ID: TKT-036.",
+      "answer": "The printer is showing offline because it picked up a new DHCP address while its print queue still pointed at the old IP. To resolve this, a DHCP reservation was set for the printer's MAC, the port on the print server was updated to the new address, and it was confirmed that the queue came back online for all users. This information is based on Ticket ID: TKT-036.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -113,7 +113,7 @@
       "question": "Computer is running very slowly after Windows update",
       "expected_category": "Hardware",
       "should_answer": true,
-      "answer": "To fix slow computer performance after a Windows update, you can refer to Ticket ID: TKT-095. The resolution involved rolling back a broken generic Bluetooth driver that was causing issues across the office fleet. While this specific ticket addresses Bluetooth issues, it highlights the importance of checking for driver-related problems after an update. \n\nFor general slow performance, you might also consider checking for full storage or thermal issues, as seen in Ticket ID: TKT-022, where diagnostics showed the SSD was 98% full and there was thermal throttling due to dust-clogged vents. In that case, clearing temp files, offloading data, and cleaning the vents resolved the performance issues.\n\nIf you need more specific steps, please refer to the relevant tickets.",
+      "answer": "To fix slow computer performance after a Windows update, you can refer to Ticket ID: TKT-095. The resolution involved rolling back a broken generic Bluetooth driver that was causing issues across the office fleet. This suggests that after a Windows update, checking for driver issues and rolling back to a previous known-good version may help improve performance. \n\nResolution: Confirmed the update had shipped a broken generic Bluetooth driver. Rolled back the driver to the previous known-good version fleet-wide via SCCM and blocked the problematic driver update from redeploying until the vendor issued a fix. \n\nTicket ID: TKT-095.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -122,7 +122,7 @@
       "question": "Cannot install Adobe Acrobat on my work laptop",
       "expected_category": "Software Access",
       "should_answer": true,
-      "answer": "Based on Ticket ID: TKT-151, the issue of being unable to install an application on a work laptop is addressed. The resolution involved confirming that the laptop was under a standard-user policy that blocks local-admin installs. Instead of granting standing admin rights, the approved application package was pushed through the Company Portal / Software Center, allowing it to install under the system account. \n\nIf you are facing a similar issue with Adobe Acrobat, you may need to follow a similar process.",
+      "answer": "Based on Ticket ID: TKT-151, the issue of being unable to install an application on a work laptop is addressed. The resolution involved confirming that the laptop was under a standard-user policy that blocks local-admin installs. Instead of granting standing admin rights, the approved application package was pushed through the Company Portal / Software Center for installation under the system account. \n\nIf you are facing a similar issue with Adobe Acrobat, you may need to check if the application is approved and can be installed through the Software Center.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -131,7 +131,7 @@
       "question": "WiFi keeps dropping in the conference room",
       "expected_category": "Network",
       "should_answer": true,
-      "answer": "The issue of WiFi dropping in the conference room may be related to network coverage or interference. In a similar case (Ticket ID: TKT-132), access points across a building were found to intermittently reboot due to a firmware update, causing drops for connected users. The resolution involved rolling back the firmware and applying a patch to stabilize the connection. \n\nFor your specific situation, it may be beneficial to conduct a site survey to check for coverage and interference issues in the conference room. \n\nPlease refer to Ticket ID: TKT-132 for more details on the resolution process.",
+      "answer": "The issue of WiFi dropping in the conference room may be related to network configuration or coverage. Based on Ticket ID: TKT-130, a Wi-Fi site survey was conducted to confirm adequate coverage in a new conference room build-out, and the network was tested before handing it over. If there are ongoing issues, it may be beneficial to conduct a similar survey or check the configuration. \n\nResolution from Ticket ID: TKT-130: \"Coordinated with facilities to terminate the new network drops, configured switch ports for the room's AV controller and camera, ran a Wi-Fi site survey to confirm adequate coverage, and tested a full Teams meeting from the room before handing it over.\"",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
@@ -140,7 +140,7 @@
       "question": "Account locked after too many wrong password attempts",
       "expected_category": "Password",
       "should_answer": true,
-      "answer": "To unlock your account after multiple incorrect password attempts, you can follow the resolution from Ticket ID: TKT-067. In that case, the user's identity was verified in person, and they were walked to the badge office to reissue a working smart card. Additionally, the PIN counter was reset, and the new card was re-enrolled to their account, which confirmed successful login. \n\nIf you are unable to verify your identity in person, please contact your IT support for further assistance.",
+      "answer": "To unlock your account after multiple incorrect password attempts, you can follow the resolution from Ticket ID: TKT-067. In that case, the user's identity was verified in person, and they were walked to the badge office to reissue a working smart card. Additionally, the PIN counter was reset, and the new card was re-enrolled to their account, allowing them to log in successfully. \n\nIf you need further assistance, please contact your IT support team.",
       "expected_behavior": "Answer",
       "actual_behavior": "Answered",
       "passed": true
