@@ -10,7 +10,7 @@ Built to demonstrate Forward Deployed Engineer and Solutions Engineer capabiliti
 
 ## Live Demo
 
-[Link to deployed app on Railway]
+**[it-support-rag-agent-production.up.railway.app](https://it-support-rag-agent-production.up.railway.app/)**
 
 > Try asking: "My printer is not responding" or "How many VPN tickets exist in the system?"
 
