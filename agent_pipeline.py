@@ -1,11 +1,17 @@
 """
 Multi-agent LangGraph pipeline for the IT Support RAG Agent.
 
-Three agents run in sequence as a LangGraph StateGraph:
-    1. retrieval_agent — searches ChromaDB for the top 3 matching tickets.
-    2. answer_agent     — calls GPT-4o-mini to produce a grounded answer.
-    3. triage_agent     — flags low-confidence or unanswered queries for
-                           Tier 2 escalation.
+Four agents run as a LangGraph StateGraph (verification is feature-flagged):
+    1. retrieval_agent    — searches ChromaDB for the top 3 matching tickets;
+                            broadens the query on a retry.
+    2. answer_agent       — calls GPT-4o-mini to produce a grounded answer.
+    3. verification_agent — independent GPT-4o-mini judge fact-checks the answer
+                            against the retrieved context (ENABLE_VERIFICATION_AGENT).
+    4. triage_agent       — flags low-confidence/ungrounded/unanswered queries
+                            for Tier 2 escalation.
+
+Adaptive retry: a conditional edge broadens the query and re-runs retrieval
+(up to MAX_RETRIEVAL_RETRIES passes) when verification fails or confidence is low.
 
 Run directly to execute a small built-in test:
     python3 agent_pipeline.py

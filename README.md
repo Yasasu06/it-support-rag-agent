@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/Yasasu06/it-support-rag-agent/actions/workflows/tests.yml/badge.svg)
 
-A production-grade AI system that answers enterprise IT support questions by retrieving and citing real historical incidents — built with Retrieval-Augmented Generation (RAG), a three-agent LangGraph pipeline, and a knowledge base assembled from four independent real-world and synthetic data sources.
+A production-grade AI system that answers enterprise IT support questions by retrieving and citing real historical incidents — built with Retrieval-Augmented Generation (RAG), a four-agent LangGraph pipeline with adaptive retry, and a knowledge base assembled from multiple real-world and synthetic data sources plus a live ServiceNow API connection.
 
 Built to demonstrate Forward Deployed Engineer and Solutions Engineer capabilities for enterprise AI deployment.
 
@@ -34,13 +34,16 @@ An AI assistant grounded exclusively in enterprise IT incident data that:
 
 ### Multi-Agent Pipeline (LangGraph)
 
-Every query flows through a three-agent StateGraph:
+Every query flows through a four-agent StateGraph:
 
-1. **Retrieval Agent** — semantic search across ChromaDB vector store, returns top 3 matching incidents with similarity scores
+1. **Retrieval Agent** — semantic search across ChromaDB vector store, returns top 3 matching incidents with similarity scores; broadens the query on a retry
 2. **Answer Agent** — GPT-4o-mini generates a grounded response using only retrieved context, cites Ticket IDs
-3. **Triage Agent** — evaluates the confidence score, routes to Tier 1 or Tier 2 escalation
+3. **Verification Agent** — an independent GPT-4o-mini judge fact-checks the answer against the retrieved context and flags ungrounded claims (feature-flagged via `ENABLE_VERIFICATION_AGENT`)
+4. **Triage Agent** — evaluates confidence and groundedness, routes to Tier 1 or Tier 2 escalation
 
-Analytical queries ("how many VPN tickets?") route to a separate Tool Agent with three ChromaDB tools: category search, ticket counting, and resolution time statistics.
+**Adaptive retry:** when the answer fails groundedness verification or confidence is low, the pipeline automatically broadens the query and re-runs retrieval — up to `MAX_RETRIEVAL_RETRIES` (default 2) additional passes — before returning. This retry is surfaced in the UI (a "broadened search" badge on the answer and a session retry-rate stat in the System tab).
+
+Analytical queries ("how many VPN tickets?") route to a separate Tool Agent with four ChromaDB/ServiceNow tools: category search, ticket counting, resolution-time statistics, and live ServiceNow status.
 
 ### RAG Pipeline
 
@@ -50,16 +53,20 @@ Analytical queries ("how many VPN tickets?") route to a separate Tool Agent with
 - Query reformulation: GPT-4o-mini rewrites vague queries before retrieval for improved recall
 - Conversation memory: last 5 exchanges retained in a rolling in-memory buffer
 
-### Data Sources (748 incidents after normalization)
+### Data Sources (750 incidents currently embedded)
 
-| Source | Tickets Fetched | Description |
+Counts below are the **actual number of tickets embedded in the production ChromaDB right now**, verified by querying the collection metadata (not pre-dedup fetch volumes):
+
+| Source | Embedded tickets | Description |
 |--------|-------|-------------|
-| Internal synthetic | 150 | Curated IT incident patterns across 8 categories |
-| Kaggle customer support dataset | 797 | Real enterprise support tickets |
-| GitHub Issues (closed, labeled) | 500 | Real open-source issue threads |
-| HuggingFace ServiceNow dataset | 494 | Synthetic ServiceNow ITSM incidents |
+| GitHub Issues (closed, labeled) | 496 | Real open-source IT/dev issue threads |
+| Internal synthetic | 152 | Curated IT incident patterns across 8 categories |
+| HuggingFace ServiceNow dataset | 97 | Synthetic ServiceNow ITSM incidents |
+| Kaggle support dataset | 5 | Real enterprise support tickets (after cross-source dedup) |
+| **Live ServiceNow API** | 0 embedded | Real-time REST connection (`/api/now/table/incident`); batch-ingest supported, but the connected instance is currently empty |
+| **Total** | **750** | 8 categories |
 
-*Figures are from the most recent full ingestion run. Per-source counts are pre-dedup fetch volumes; the pipeline normalizes, masks, and deduplicates across all four sources down to 748 final tickets.*
+*The distribution is intentionally GitHub-weighted; Kaggle contributes only a handful of tickets after deduplication. ServiceNow is wired as a genuine live API connection (queried in real time via the `check_live_servicenow_status` tool), but the connected instance has no incidents, so it contributes 0 embedded tickets.*
 
 All data passes through a normalization pipeline: text cleaning/truncation, PII masking (Presidio), category inference, validity filtering (minimum length, placeholder/test-ticket rejection, duplicate issue/resolution rejection), and cross-source deduplication on issue text.
 
@@ -78,6 +85,12 @@ All data passes through a normalization pipeline: text cleaning/truncation, PII 
 | Fine-tuning Pipeline | 120-example train / 30-example validation dataset prepared; job not yet submitted |
 | Multi-modal Input | Upload an error screenshot with (or instead of) your question — GPT-4o-mini vision extracts the issue, which flows through the same RAG pipeline (PII masking, verification, confidence scoring). Toggle with `ENABLE_IMAGE_UPLOAD`. |
 | Rate Limiting | Per-session sliding-window limit (default 15 requests / 60s) applied before any OpenAI call on every submission path (typed, screenshot, and suggestion chips), so abuse is blocked before it can incur cost. Isolated per session — one user never affects another. |
+| Answer Verification | Independent GPT-4o-mini judge fact-checks every answer against the retrieved context before delivery; ungrounded answers are flagged and force Tier 2 escalation. Toggle with `ENABLE_VERIFICATION_AGENT`. |
+| Adaptive Retry | On failed verification or low confidence, the query is automatically broadened and the pipeline re-runs (up to 2 retries). Surfaced in the UI via a "broadened search" badge and a System-tab retry-rate stat. Toggle with `ENABLE_ADAPTIVE_RETRY`. |
+| Failure Handling | Retry-with-backoff on transient API failures, graceful degradation to a safe escalated response on outages, fail-closed PII masking, and input validation — so a backend failure never surfaces a raw traceback to the user. |
+| Live Evaluation | Every production query is scored in real time (relevance, groundedness, latency) via `live_eval.py`; aggregates shown in the System tab (separate from the offline eval harness). |
+| Deployment Configurability | ~18 environment variables centralized in `config.py` (models, thresholds, retry limits, feature flags) with defaults that reproduce prior behavior exactly; active config shown in the System tab. |
+| Visit Analytics | Anonymous per-session visit logging (timestamp + random UUID only, no PII) with a private, password-protected admin view at `?admin=<secret>` (gated by `ADMIN_ANALYTICS_KEY`). |
 
 ---
 
@@ -125,25 +138,46 @@ Tested against 20 questions spanning all 8 incident categories:
 
 ```
 it-support-rag-agent/
-├── app.py                    # Streamlit chat interface
-├── rag.py                    # RAG pipeline + streaming
-├── agent_pipeline.py         # LangGraph multi-agent system
-├── security.py               # PII detection + audit logging
-├── normalize.py              # Multi-source data normalization
+├── app.py                    # Streamlit UI (chat + System tab)
+├── rag.py                    # RAG query layer + streaming
+├── agent_pipeline.py         # LangGraph 4-agent pipeline + tools + adaptive retry
+├── config.py                 # Centralized env-var config + feature flags
+├── security.py               # Presidio PII masking (fail-closed) + audit logging
+├── normalize.py              # Multi-source data normalization + dedup
+├── error_handling.py         # Retry/backoff, safe-fallback, input validation
+├── rate_limiter.py           # Per-session sliding-window rate limiting
+├── image_processing.py       # Multi-modal: GPT-4o-mini vision screenshot extraction
+├── live_eval.py              # Real-time per-query scoring
+├── analytics.py              # Anonymous visit logging (admin-gated view)
 ├── ingest_all.py             # Multi-source ingestion pipeline
 ├── watcher.py                # Real-time file ingestion
 ├── scheduler.py              # Nightly refresh scheduler
-├── eval.py                   # Evaluation test suite
-├── start.sh                  # Railway startup script
+├── eval.py                   # 20-question behavioral eval suite
+├── start.sh / railway.toml   # Railway startup + deploy config
+├── DECISIONS.md              # Documented architecture tradeoffs
 ├── connectors/
-│   ├── kaggle_connector.py   # Kaggle dataset ingestion
-│   ├── github_connector.py   # GitHub Issues ingestion
-│   └── huggingface_connector.py  # HF dataset ingestion
-├── data/
-│   └── tickets.py            # 150 synthetic IT incidents
-└── finetune/
-    ├── prepare_dataset.py    # Fine-tuning dataset prep
-    └── run_finetune.py       # OpenAI fine-tuning pipeline
+│   ├── kaggle_connector.py
+│   ├── github_connector.py
+│   ├── huggingface_connector.py
+│   └── servicenow_connector.py   # Live ServiceNow REST connector
+├── eval_harness/             # Offline 5-dimension evaluation
+│   ├── metrics.py            # groundedness/relevance/citation/refusal/latency
+│   ├── runner.py             # runs the harness over the test set
+│   ├── analyze.py            # honest averages (excl. correct refusals)
+│   └── compare_runs.py       # before/after diff
+├── finetune/
+│   ├── prepare_dataset.py    # Fine-tuning dataset prep (120/30 JSONL)
+│   ├── run_finetune.py       # OpenAI fine-tuning job script (not executed)
+│   ├── compare_models.py     # base-vs-finetuned comparison harness
+│   └── FINETUNE_STATUS.md    # decision record + baseline
+├── tests/                    # 54 pytest tests (51 fast + 3 API-gated)
+│   ├── test_normalize.py  test_security.py  test_routing_logic.py
+│   ├── test_retry_decision.py  test_error_handling.py  test_rate_limiter.py
+│   ├── test_image_processing.py  test_finetune_config.py  test_integration.py
+│   └── conftest.py
+├── .github/workflows/tests.yml   # CI: runs fast tests on every push
+└── data/
+    └── tickets.py            # 152 synthetic IT incidents
 ```
 
 ---
@@ -233,22 +267,26 @@ python -m pytest tests/ -v
 python -m pytest tests/ -v --ignore=tests/test_integration.py
 ```
 
-**Fast unit tests** (`test_normalize.py`, `test_security.py`,
-`test_routing_logic.py`, `test_retry_decision.py`) cover validity filtering,
-category inference, deduplication, PII masking, audit logging, query routing,
-and the retry-decision logic — all with zero API cost.
+**54 tests total** (`pytest tests/ --collect-only`): **51 fast unit tests** plus
+3 API-gated integration tests. The fast tests span 8 files — `test_normalize.py`,
+`test_security.py`, `test_routing_logic.py`, `test_retry_decision.py`,
+`test_error_handling.py`, `test_rate_limiter.py`, `test_image_processing.py`,
+`test_finetune_config.py` — covering validity filtering, category inference,
+deduplication, PII masking, audit logging, query routing, retry-decision logic,
+error-handling/retry decorators, rate-limiting, image validation, and
+fine-tuned-model selection — all with zero API cost.
 
 **Integration tests** (`test_integration.py`) exercise the real RAG and
-multi-agent pipelines against OpenAI and are marked so they can be excluded
-with `-m "not integration"`.
+multi-agent pipelines against OpenAI and auto-skip when no API key is present.
 
 ### Continuous Integration
 
-A [GitHub Actions workflow](.github/workflows/tests.yml) runs the fast unit
-tests automatically on every push and pull request to `main`. Integration
-tests are intentionally excluded from CI to avoid exposing an API key as a
-secret and incurring per-push API cost — a deliberate tradeoff documented in
-the workflow file.
+A [GitHub Actions workflow](.github/workflows/tests.yml) runs the fast unit test
+suite (`pytest tests/ --ignore=tests/test_integration.py`) automatically on
+every push and pull request to `main` (Ubuntu, Python 3.12). Integration tests
+are intentionally excluded from CI to avoid exposing an API key as a secret and
+incurring per-push API cost — a deliberate tradeoff documented in the workflow
+file. Current status is shown by the badge at the top of this README.
 
 ---
 
@@ -282,12 +320,13 @@ python3 eval_harness/compare_runs.py old.json new.json
 Each run writes a timestamped `eval_harness/harness_results.json` with
 per-dimension averages plus full per-question detail.
 
-**Reading the groundedness/relevance numbers honestly:** the raw averages
-(groundedness **0.65**, relevance **0.635**) are pulled down by the four
+**Reading the groundedness/relevance numbers honestly** (representative run —
+LLM-judged scores vary somewhat run-to-run): the raw averages (groundedness
+**~0.65–0.70**, relevance **~0.64–0.66**) are pulled down by the four
 correctly-refused out-of-scope questions, which score 0 by construction — there
 is no context to be grounded in and refusing is the right behaviour. Excluding
 only those correct refusals (never false refusals, which are real misses),
-the averages are **0.81 groundedness** and **0.79 relevance**. Run
+the averages rise to roughly **0.81 groundedness** and **0.79 relevance**. Run
 `python3 eval_harness/analyze.py` to see both numbers side by side plus the
 genuine in-scope weak spots, which are kept in both figures rather than hidden.
 
@@ -304,7 +343,7 @@ before and after a change to measure impact.
 RAG grounds answers in the actual incident database at query time. Fine-tuning bakes knowledge into model weights, making updates expensive. For a knowledge base that updates daily, RAG is the correct architectural choice.
 
 **Why LangGraph over a single chain?**
-The three-agent separation allows independent optimization of retrieval, generation, and triage. It also enables the analytical tool agent path for aggregate queries without affecting the RAG path.
+The four-agent separation (retrieval, answer, verification, triage) allows independent optimization of each stage and makes the adaptive-retry loop a clean conditional edge. It also enables the analytical tool-agent path for aggregate queries without affecting the RAG path.
 
 **Why ChromaDB over Pinecone?**
 ChromaDB runs locally and on Railway with zero infrastructure overhead. For a portfolio deployment, operational simplicity matters. Production migration to Pinecone or Azure AI Search would be a configuration change, not an architectural one.
@@ -325,14 +364,20 @@ lives in [DECISIONS.md](DECISIONS.md).
   deployed app always has data within Railway's cold-start window, at the cost
   of shipping an ~11MB binary in version control. Migrating to a persistent
   volume with conditional re-ingestion is the planned proper fix.
-- **No CI/CD pipeline yet.** Tests and validation are run manually before each
-  push. Adding GitHub Actions to gate merges is a straightforward next step,
-  deprioritized behind feature work.
-- **No unified automated test suite.** Integration-style test scripts exist per
-  feature (`test_verification_agent.py`, `test_live_eval.py`,
-  `test_retry_loop.py`, `test_servicenow_connector.py`) and are run directly,
-  rather than being consolidated under a single pytest runner with shared
-  fixtures and coverage reporting.
+- **The connected ServiceNow instance is empty.** The connector is a genuine
+  live REST integration, but the instance it points at has no incidents, so it
+  contributes 0 embedded tickets and the live-status tool reports an empty
+  instance. It demonstrates the integration, not a populated production feed.
+- **Uneven source mix.** After cross-source deduplication the knowledge base is
+  heavily GitHub-weighted (496 of 750); Kaggle contributes only 5 tickets.
+- **Fine-tuning was scoped but never executed.** The dataset-prep, job script,
+  and model-comparison harness are all built, but the OpenAI fine-tuning job was
+  never submitted (self-serve access gated). The system can hot-swap a
+  fine-tuned model via config the moment one exists — see
+  [finetune/FINETUNE_STATUS.md](finetune/FINETUNE_STATUS.md).
+- **Small eval set.** Accuracy is measured on a fixed 20-question suite; the
+  LLM-judged metrics vary run-to-run, so the ~90% figure is a reproducible
+  central value rather than a fixed guarantee.
 
 ---
 
