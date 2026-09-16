@@ -46,6 +46,30 @@ def _get_auth():
     return (SERVICENOW_USER, SERVICENOW_PASS)
 
 
+def _extract_error_detail(response: "requests.Response") -> str:
+    """
+    Pulls ServiceNow's own error detail out of the response body when present.
+    ServiceNow error responses are normally JSON like:
+        {"error": {"message": "...", "detail": "..."}, "status": "failure"}
+    but a WAF/proxy block page can return HTML instead - fall back to a
+    truncated raw-text snippet in that case so the real cause is never hidden
+    behind a bare status code. Never raises.
+    """
+    try:
+        body = response.json()
+        err = body.get("error", {})
+        message = err.get("message") or body.get("status")
+        detail = err.get("detail")
+        if message and detail:
+            return f"{message}: {detail}"
+        if message:
+            return str(message)
+    except Exception:
+        pass
+    snippet = (response.text or "").strip().replace("\n", " ")[:200]
+    return snippet or "no error body returned"
+
+
 def test_connection() -> dict:
     """
     Tests the live ServiceNow connection with a minimal 1-record fetch.
@@ -58,13 +82,22 @@ def test_connection() -> dict:
             "message": "ServiceNow credentials not configured in .env",
         }
 
+    # Defensively strip a trailing slash so we never send a double-slash path
+    # like https://instance.service-now.com//api/now/... if the env var was
+    # copied with one. (Verified this doesn't actually break ServiceNow's
+    # gateway, but it's still wrong and worth normalizing.)
+    base_url = SERVICENOW_URL.rstrip("/")
+
     try:
-        url = f"{SERVICENOW_URL}/api/now/table/incident?sysparm_limit=1"
+        url = f"{base_url}/api/now/table/incident?sysparm_limit=1"
         response = requests.get(
             url,
             auth=_get_auth(),
             headers={"Accept": "application/json"},
-            timeout=10,
+            # Bumped from 10s: ServiceNow Personal Developer Instances
+            # hibernate after inactivity and can take well over 10s to wake on
+            # the first request after being asleep.
+            timeout=25,
         )
 
         if response.status_code == 200:
@@ -75,20 +108,43 @@ def test_connection() -> dict:
         elif response.status_code == 401:
             return {
                 "success": False,
-                "message": "Authentication failed - check username/password in .env",
+                "message": (
+                    "Authentication failed (401) - check SERVICENOW_USERNAME/"
+                    f"SERVICENOW_PASSWORD. ServiceNow said: {_extract_error_detail(response)}"
+                ),
+            }
+        elif response.status_code == 403:
+            return {
+                "success": False,
+                "message": (
+                    "Forbidden (403) - credentials are valid but this user "
+                    "lacks permission to read the incident table (check the "
+                    "user has the 'itil' role or an ACL granting incident "
+                    f"read access on this instance). ServiceNow said: {_extract_error_detail(response)}"
+                ),
             }
         else:
             return {
                 "success": False,
-                "message": f"Unexpected status code: {response.status_code}",
+                "message": (
+                    f"Unexpected status code: {response.status_code}. "
+                    f"ServiceNow said: {_extract_error_detail(response)}"
+                ),
             }
 
     except requests.exceptions.Timeout:
-        return {"success": False, "message": "Connection timed out"}
-    except requests.exceptions.ConnectionError:
         return {
             "success": False,
-            "message": "Could not reach ServiceNow instance - check URL",
+            "message": (
+                "Connection timed out after 25s - if this is a fresh/idle "
+                "ServiceNow dev instance it may be hibernating; open it in a "
+                "browser once to wake it up, then retry."
+            ),
+        }
+    except requests.exceptions.ConnectionError as e:
+        return {
+            "success": False,
+            "message": f"Could not reach ServiceNow instance - check SERVICENOW_INSTANCE_URL ({e})",
         }
     except Exception as e:
         return {"success": False, "message": f"Unexpected error: {str(e)}"}
@@ -104,7 +160,7 @@ def fetch_incidents_batch(limit: int = 100) -> list:
         return []
 
     try:
-        url = f"{SERVICENOW_URL}/api/now/table/incident"
+        url = f"{SERVICENOW_URL.rstrip('/')}/api/now/table/incident"
         params = {
             "sysparm_limit": limit,
             "sysparm_query": "active=false",
@@ -175,7 +231,7 @@ def live_lookup_incident(incident_number: str) -> Optional[dict]:
         return None
 
     try:
-        url = f"{SERVICENOW_URL}/api/now/table/incident"
+        url = f"{SERVICENOW_URL.rstrip('/')}/api/now/table/incident"
         params = {
             "sysparm_query": f"number={incident_number}",
             "sysparm_limit": 1,
@@ -219,7 +275,7 @@ def live_incident_count_by_state() -> dict:
         return {}
 
     try:
-        url = f"{SERVICENOW_URL}/api/now/table/incident"
+        url = f"{SERVICENOW_URL.rstrip('/')}/api/now/table/incident"
         params = {
             "sysparm_limit": 1000,
             "sysparm_fields": "state",
