@@ -293,25 +293,56 @@ h1, h2, h3, .display-text {
 }
 
 /* Sidebar - terminal panel */
-/* Force the sidebar to stay open and on-screen regardless of Streamlit's
-   collapse state. A persisted/collapsed state (remembered across reloads) or a
-   narrow-viewport auto-collapse otherwise slides it off-screen via transform /
-   zero width. The pre-redesign CSS pinned it open this way; the redesign
-   dropped it, which is why the sidebar "stopped rendering". */
 section[data-testid="stSidebar"] {
   background-color: var(--sidebar-bg) !important;
   border-right: 1px solid var(--sidebar-border) !important;
-  display: flex !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  transform: none !important;
-  width: 300px !important;
-  min-width: 300px !important;
-  max-width: 300px !important;
 }
-section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
-  width: 300px !important;
-  min-width: 300px !important;
+/* Force the sidebar to stay open and on-screen regardless of Streamlit's
+   collapse state, but ONLY at desktop/tablet widths. A persisted/collapsed
+   state (remembered across reloads) otherwise slides it off-screen via
+   transform / zero width. The pre-redesign CSS pinned it open this way; the
+   redesign dropped it, which is why the sidebar "stopped rendering". */
+@media (min-width: 769px) {
+  section[data-testid="stSidebar"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+    width: 300px !important;
+    min-width: 300px !important;
+    max-width: 300px !important;
+  }
+  section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
+    width: 300px !important;
+    min-width: 300px !important;
+  }
+}
+/* Mobile (<=768px): app.py sets initial_sidebar_state="expanded", which is
+   Streamlit's default at EVERY viewport width, not just desktop, and
+   aria-expanded is "true" from the very first mount regardless of screen
+   size - there's no built-in "start collapsed on mobile" signal to key off.
+   Simply not forcing it open here still left it permanently laid out at
+   300px, squeezing the ~90px-wide remainder of a phone screen unusable.
+   Move it off-canvas (position: fixed, off-screen) unconditionally on
+   mobile instead, so the main content is always fully usable on a phone.
+   Known tradeoff: Streamlit's own collapse/expand toggle button has no
+   visible effect at this width, since nothing here reads its state - a
+   separate mobile-drawer polish item, not the overlap bug this fixes. */
+@media (max-width: 768px) {
+  section[data-testid="stSidebar"] {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    height: 100vh !important;
+    width: 300px !important;
+    min-width: 300px !important;
+    max-width: 85vw !important;
+    transform: translateX(-100%) !important;
+  }
+  section[data-testid="stSidebar"] > div[data-testid="stSidebarContent"] {
+    width: 300px !important;
+    min-width: 300px !important;
+  }
 }
 section[data-testid="stSidebar"] * {
   color: var(--sidebar-ink) !important;
