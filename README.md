@@ -63,10 +63,10 @@ Counts below are the **actual number of tickets embedded in the production Chrom
 | Internal synthetic | 152 | Curated IT incident patterns across 8 categories |
 | HuggingFace ServiceNow dataset | 97 | Synthetic ServiceNow ITSM incidents |
 | Kaggle support dataset | 5 | Real enterprise support tickets (after cross-source dedup) |
-| **Live ServiceNow API** | 0 embedded | Real-time REST connection (`/api/now/table/incident`); batch-ingest supported, but the connected instance is currently empty |
+| **Live ServiceNow API** | 0 embedded | Real-time REST connection (`/api/now/table/incident`), authenticated and live; batch-ingest supported, but no batch ingest has been re-run since the connection was (re-)established, so 0 tickets are embedded yet |
 | **Total** | **750** | 8 categories |
 
-*The distribution is intentionally GitHub-weighted; Kaggle contributes only a handful of tickets after deduplication. ServiceNow is wired as a genuine live API connection (queried in real time via the `check_live_servicenow_status` tool), but the connected instance has no incidents, so it contributes 0 embedded tickets.*
+*The distribution is intentionally GitHub-weighted; Kaggle contributes only a handful of tickets after deduplication. ServiceNow is a genuine live API connection (queried in real time via the `check_live_servicenow_status` tool) — authenticated and connected, confirmed via the System tab showing "Live — Connected" — but no tickets have been batch-embedded from it yet, so it contributes 0 embedded tickets to the count above.*
 
 All data passes through a normalization pipeline: text cleaning/truncation, PII masking (Presidio), category inference, validity filtering (minimum length, placeholder/test-ticket rejection, duplicate issue/resolution rejection), and cross-source deduplication on issue text.
 
@@ -96,7 +96,7 @@ All data passes through a normalization pipeline: text cleaning/truncation, PII 
 
 ## Evaluation Results
 
-Tested against 20 questions spanning all 8 incident categories:
+Tested against 20 questions spanning all 8 incident categories. Most recent run: **2026-09-16** (post-ServiceNow-fix, `eval_results.json`):
 
 - Overall accuracy: 90% (18/20)
 - In-scope questions answered correctly: 14/16
@@ -170,7 +170,7 @@ it-support-rag-agent/
 │   ├── run_finetune.py       # OpenAI fine-tuning job script (not executed)
 │   ├── compare_models.py     # base-vs-finetuned comparison harness
 │   └── FINETUNE_STATUS.md    # decision record + baseline
-├── tests/                    # 54 pytest tests (51 fast + 3 API-gated)
+├── tests/                    # 57 pytest tests (54 fast + 3 API-gated)
 │   ├── test_normalize.py  test_security.py  test_routing_logic.py
 │   ├── test_retry_decision.py  test_error_handling.py  test_rate_limiter.py
 │   ├── test_image_processing.py  test_finetune_config.py  test_integration.py
@@ -267,12 +267,13 @@ python -m pytest tests/ -v
 python -m pytest tests/ -v --ignore=tests/test_integration.py
 ```
 
-**54 tests total** (`pytest tests/ --collect-only`): **51 fast unit tests** plus
+**57 tests total** (`pytest tests/ --collect-only`): **54 fast unit tests** plus
 3 API-gated integration tests. The fast tests span 8 files — `test_normalize.py`,
 `test_security.py`, `test_routing_logic.py`, `test_retry_decision.py`,
 `test_error_handling.py`, `test_rate_limiter.py`, `test_image_processing.py`,
 `test_finetune_config.py` — covering validity filtering, category inference,
-deduplication, PII masking, audit logging, query routing, retry-decision logic,
+deduplication, PII masking, audit logging, query routing (including
+word-boundary regression tests for keyword misrouting), retry-decision logic,
 error-handling/retry decorators, rate-limiting, image validation, and
 fine-tuned-model selection — all with zero API cost.
 
@@ -320,15 +321,17 @@ python3 eval_harness/compare_runs.py old.json new.json
 Each run writes a timestamped `eval_harness/harness_results.json` with
 per-dimension averages plus full per-question detail.
 
-**Reading the groundedness/relevance numbers honestly** (representative run —
-LLM-judged scores vary somewhat run-to-run): the raw averages (groundedness
-**~0.65–0.70**, relevance **~0.64–0.66**) are pulled down by the four
-correctly-refused out-of-scope questions, which score 0 by construction — there
-is no context to be grounded in and refusing is the right behaviour. Excluding
-only those correct refusals (never false refusals, which are real misses),
-the averages rise to roughly **0.81 groundedness** and **0.79 relevance**. Run
-`python3 eval_harness/analyze.py` to see both numbers side by side plus the
-genuine in-scope weak spots, which are kept in both figures rather than hidden.
+**Reading the groundedness/relevance numbers honestly** (most recent run:
+**2026-09-16**, post-ServiceNow-fix — LLM-judged scores vary somewhat
+run-to-run): the raw averages (groundedness **0.685**, relevance **0.69**,
+citation accuracy **1.0**, refusal correctness **1.0**, latency **0.745**) are
+pulled down by the four correctly-refused out-of-scope questions, which score
+0 by construction — there is no context to be grounded in and refusing is the
+right behaviour. Excluding only those correct refusals (never false refusals,
+which are real misses), the averages rise to **0.856 groundedness** and
+**0.863 relevance**. Run `python3 eval_harness/analyze.py` to see both numbers
+side by side plus the genuine in-scope weak spots, which are kept in both
+figures rather than hidden.
 
 This is **separate from the always-on live evaluation** (`live_eval.py`), which
 scores real production queries continuously as they happen. The harness is for
@@ -364,10 +367,12 @@ lives in [DECISIONS.md](DECISIONS.md).
   deployed app always has data within Railway's cold-start window, at the cost
   of shipping an ~11MB binary in version control. Migrating to a persistent
   volume with conditional re-ingestion is the planned proper fix.
-- **The connected ServiceNow instance is empty.** The connector is a genuine
-  live REST integration, but the instance it points at has no incidents, so it
-  contributes 0 embedded tickets and the live-status tool reports an empty
-  instance. It demonstrates the integration, not a populated production feed.
+- **ServiceNow has no batch-ingested tickets yet.** The connector is a genuine
+  live REST integration and is authenticated and connected in production (the
+  System tab shows "Live — Connected"), but no batch ingest has been run since
+  the connection was established, so it contributes 0 embedded tickets to the
+  count above. Live real-time queries via `check_live_servicenow_status` work
+  against the connected instance regardless of the batch-embedded count.
 - **Uneven source mix.** After cross-source deduplication the knowledge base is
   heavily GitHub-weighted (496 of 750); Kaggle contributes only 5 tickets.
 - **Fine-tuning was scoped but never executed.** The dataset-prep, job script,
