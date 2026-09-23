@@ -32,3 +32,24 @@ def test_plain_support_question_is_not_analytical():
 
 def test_routing_is_case_insensitive():
     assert is_analytical_query("HOW MANY password resets happened") is True
+
+
+def test_account_is_not_misrouted_as_count():
+    # Regression test: "count" is a substring of "account". A naive `kw in
+    # q_lower` check misrouted any question mentioning "account" to the
+    # analytical tool-agent path, which always renders with sources=[] -
+    # silently dropping the "Source tickets" expander even though the
+    # tool-agent produced a real, ticket-citing answer.
+    assert is_analytical_query("I cannot access SAP after my account was locked") is False
+    assert is_analytical_query("Account locked after too many wrong password attempts") is False
+
+
+def test_sla_is_not_misrouted_inside_unrelated_words():
+    # Same substring-collision class: "sla" is a substring of "Slack" and
+    # "translate".
+    assert is_analytical_query("My Slack notifications are not working") is False
+    assert is_analytical_query("Can you translate this error message") is False
+
+
+def test_sla_still_routes_when_it_is_a_real_word():
+    assert is_analytical_query("Can you show me SLA compliance stats") is True

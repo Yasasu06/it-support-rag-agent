@@ -12,6 +12,7 @@ Run with:
 import html
 import os
 import json as _json
+import re
 import uuid
 
 from dotenv import load_dotenv
@@ -64,9 +65,22 @@ ANALYTICAL_KEYWORDS = [
 ]
 
 
+# Word-boundary matching, not plain substring containment. A naive `kw in
+# q_lower` check let short keywords match inside unrelated words - e.g. "count"
+# is a substring of "account", so "I cannot access SAP after my account was
+# locked" was misrouted to the analytical tool-agent path (which always
+# renders with sources=[], since it doesn't do RAG citation) instead of the
+# RAG path, silently dropping the "Source tickets" expander. "sla" has the
+# same risk against "Slack"/"translate". \b anchors each keyword (including
+# multi-word phrases) to real word boundaries so only genuine matches count.
+_ANALYTICAL_KEYWORD_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(kw) for kw in ANALYTICAL_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
 def is_analytical_query(question: str) -> bool:
-    q_lower = question.lower()
-    return any(kw in q_lower for kw in ANALYTICAL_KEYWORDS)
+    return bool(_ANALYTICAL_KEYWORD_PATTERN.search(question))
 
 FEEDBACK_FILE = os.path.join(
     os.path.dirname(__file__),
