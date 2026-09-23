@@ -389,5 +389,4 @@ lives in [DECISIONS.md](DECISIONS.md).
 ## Built By
 
 **Yasaswi**
-MS Technology Management, University of Illinois Urbana-Champaign
-Targeting: Forward Deployed Engineer, Solutions Engineer, Customer Engineer roles at Microsoft, IBM, Salesforce, Glean, Databricks
+
