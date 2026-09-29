@@ -13,6 +13,8 @@ from typing import Optional
 
 import requests
 from dotenv import load_dotenv
+from error_handling import safe_error_type
+from security import sanitize_external_text
 
 load_dotenv(
     os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
@@ -44,30 +46,6 @@ def is_configured() -> bool:
 
 def _get_auth():
     return (SERVICENOW_USER, SERVICENOW_PASS)
-
-
-def _extract_error_detail(response: "requests.Response") -> str:
-    """
-    Pulls ServiceNow's own error detail out of the response body when present.
-    ServiceNow error responses are normally JSON like:
-        {"error": {"message": "...", "detail": "..."}, "status": "failure"}
-    but a WAF/proxy block page can return HTML instead - fall back to a
-    truncated raw-text snippet in that case so the real cause is never hidden
-    behind a bare status code. Never raises.
-    """
-    try:
-        body = response.json()
-        err = body.get("error", {})
-        message = err.get("message") or body.get("status")
-        detail = err.get("detail")
-        if message and detail:
-            return f"{message}: {detail}"
-        if message:
-            return str(message)
-    except Exception:
-        pass
-    snippet = (response.text or "").strip().replace("\n", " ")[:200]
-    return snippet or "no error body returned"
 
 
 def test_connection() -> dict:
@@ -109,26 +87,22 @@ def test_connection() -> dict:
             return {
                 "success": False,
                 "message": (
-                    "Authentication failed (401) - check SERVICENOW_USERNAME/"
-                    f"SERVICENOW_PASSWORD. ServiceNow said: {_extract_error_detail(response)}"
+                    "Authentication failed (HTTP 401). Check ServiceNow credentials."
                 ),
             }
         elif response.status_code == 403:
             return {
                 "success": False,
                 "message": (
-                    "Forbidden (403) - credentials are valid but this user "
-                    "lacks permission to read the incident table (check the "
-                    "user has the 'itil' role or an ACL granting incident "
-                    f"read access on this instance). ServiceNow said: {_extract_error_detail(response)}"
+                    "ServiceNow denied incident read access (HTTP 403). "
+                    "Check the account role and access rules."
                 ),
             }
         else:
             return {
                 "success": False,
                 "message": (
-                    f"Unexpected status code: {response.status_code}. "
-                    f"ServiceNow said: {_extract_error_detail(response)}"
+                    f"ServiceNow request failed (HTTP {response.status_code})."
                 ),
             }
 
@@ -141,13 +115,14 @@ def test_connection() -> dict:
                 "browser once to wake it up, then retry."
             ),
         }
-    except requests.exceptions.ConnectionError as e:
+    except requests.exceptions.ConnectionError:
         return {
             "success": False,
-            "message": f"Could not reach ServiceNow instance - check SERVICENOW_INSTANCE_URL ({e})",
+            "message": "Could not reach ServiceNow. Check the instance URL and network.",
         }
     except Exception as e:
-        return {"success": False, "message": f"Unexpected error: {str(e)}"}
+        logger.error("ServiceNow connection check failed: %s", safe_error_type(e))
+        return {"success": False, "message": "ServiceNow connection check failed."}
 
 
 def fetch_incidents_batch(limit: int = 100) -> list:
@@ -218,7 +193,7 @@ def fetch_incidents_batch(limit: int = 100) -> list:
         return tickets
 
     except Exception as e:
-        logger.error(f"ServiceNow batch fetch error: {e}")
+        logger.error("ServiceNow batch fetch error: %s", safe_error_type(e))
         return []
 
 
@@ -254,15 +229,15 @@ def live_lookup_incident(incident_number: str) -> Optional[dict]:
 
         record = records[0]
         return {
-            "number": record.get("number"),
-            "short_description": record.get("short_description"),
-            "state": record.get("state"),
-            "category": record.get("category"),
-            "close_notes": record.get("close_notes"),
+            "number": sanitize_external_text(str(record.get("number") or "")),
+            "short_description": sanitize_external_text(str(record.get("short_description") or "")),
+            "state": sanitize_external_text(str(record.get("state") or "")),
+            "category": sanitize_external_text(str(record.get("category") or "")),
+            "close_notes": sanitize_external_text(str(record.get("close_notes") or "")),
         }
 
     except Exception as e:
-        logger.error(f"Live lookup error: {e}")
+        logger.error("Live lookup error: %s", safe_error_type(e))
         return None
 
 
@@ -301,7 +276,7 @@ def live_incident_count_by_state() -> dict:
         return state_counts
 
     except Exception as e:
-        logger.error(f"Live count error: {e}")
+        logger.error("Live count error: %s", safe_error_type(e))
         return {}
 
 
@@ -317,8 +292,6 @@ if __name__ == "__main__":
         print("\nFetching sample batch (5 records)...")
         tickets = fetch_incidents_batch(limit=5)
         print(f"Got {len(tickets)} valid tickets")
-        if tickets:
-            print(f"Sample: {tickets[0]}")
 
         print("\nTesting live incident count...")
         counts = live_incident_count_by_state()

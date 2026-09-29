@@ -8,6 +8,7 @@ import time
 import requests
 from dotenv import load_dotenv
 import logging
+from error_handling import safe_error_type
 
 load_dotenv(
     os.path.join(
@@ -183,7 +184,7 @@ def fetch_issues_for_repo(
             )
             break
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error("GitHub fetch error: %s", safe_error_type(e))
             break
 
     return tickets
@@ -237,6 +238,3 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     tickets = run_github_connector()
     print(f"\nTotal GitHub tickets: {len(tickets)}")
-    if tickets:
-        print("Sample ticket:")
-        print(json.dumps(tickets[0], indent=2))

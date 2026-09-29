@@ -1,5 +1,5 @@
 """
-Downloads and processes the real ServiceNow IT helpdesk dataset from Kaggle.
+Downloads and processes the public customer-support dataset from Kaggle.
 """
 
 import os
@@ -56,9 +56,7 @@ def download_kaggle_dataset() -> str:
     ], capture_output=True, text=True)
 
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Kaggle download failed: {result.stderr}"
-        )
+        raise RuntimeError(f"Kaggle download failed (exit {result.returncode})")
 
     logger.info("Download complete")
 
@@ -196,5 +194,3 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     tickets = run_kaggle_connector()
     print(f"\nTotal Kaggle tickets: {len(tickets)}")
-    print("Sample ticket:")
-    print(json.dumps(tickets[0], indent=2))

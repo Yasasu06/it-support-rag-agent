@@ -7,11 +7,12 @@ Four agents run as a LangGraph StateGraph (verification is feature-flagged):
     2. answer_agent       — calls GPT-4o-mini to produce a grounded answer.
     3. verification_agent — independent GPT-4o-mini judge fact-checks the answer
                             against the retrieved context (ENABLE_VERIFICATION_AGENT).
-    4. triage_agent       — flags low-confidence/ungrounded/unanswered queries
+    4. triage_agent       — flags weak retrieval/ungrounded/unanswered queries
                             for Tier 2 escalation.
 
 Adaptive retry: a conditional edge broadens the query and re-runs retrieval
-(up to MAX_RETRIEVAL_RETRIES passes) when verification fails or confidence is low.
+(up to MAX_RETRIEVAL_RETRIES passes) when verification fails or the raw
+retrieval score falls below the review cutoff.
 
 Run directly to execute a small built-in test:
     python3 agent_pipeline.py
@@ -35,8 +36,16 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import create_react_agent
 from langsmith import traceable
 
-from security import is_safe_query, log_query, mask_pii
+from security import (
+    is_safe_query, log_query, mask_pii, sanitize_external_text,
+    sanitize_trace_payload,
+)
+from error_handling import safe_error_type
 from live_eval import score_response_relevance, log_live_eval
+from index_contract import (
+    COLLECTION_NAME, l2_relevance_score, validate_collection,
+    validate_embedding_model,
+)
 from connectors.servicenow_connector import (
     is_configured as servicenow_configured,
     live_incident_count_by_state,
@@ -60,17 +69,14 @@ from config import config
 # Configuration -------------------------------------------------------------
 # Sourced from the centralized config (env-overridable); defaults match the
 # previous hardcoded values exactly, so default behavior is unchanged.
-CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
-COLLECTION_NAME = "it_support_tickets"
+CHROMA_DIR = config.CHROMA_DB_PATH
 EMBEDDING_MODEL = config.EMBEDDING_MODEL
 # active_chat_model() returns the fine-tuned model when enabled+set, else the
 # base CHAT_MODEL (default). Default behavior is unchanged.
 CHAT_MODEL = config.active_chat_model()
 TOP_K = config.RETRIEVAL_K
-# Recalibrated from the spec's literal 0.60: this Chroma setup's relevance
-# scores top out around 0.25-0.32 even for clearly correct matches, with
-# weak/unrelated matches at 0.18 or below. 0.20 is the observed gap between
-# those two bands. Sourced from the config's medium threshold (same 0.20).
+# Raw Chroma relevance-score cutoff for review routing. This is an operational
+# threshold from observed local retrieval, not a calibrated probability.
 CONFIDENCE_THRESHOLD = config.CONFIDENCE_MEDIUM_THRESHOLD
 
 ANSWER_SYSTEM_PROMPT = (
@@ -79,6 +85,11 @@ ANSWER_SYSTEM_PROMPT = (
     "Always cite Ticket IDs. If context is insufficient "
     "say: I don't have information on that in the "
     "enterprise knowledge base."
+)
+
+NO_EVIDENCE_ANSWER = (
+    "I couldn't find a matching incident to support an answer. "
+    "Tier 2 review is recommended."
 )
 
 # Built lazily (not at import time) so importing this module never requires
@@ -90,6 +101,7 @@ _vectorstore: Chroma | None = None
 def _get_embeddings() -> OpenAIEmbeddings:
     global _embeddings
     if _embeddings is None:
+        validate_embedding_model(EMBEDDING_MODEL)
         _embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
     return _embeddings
 
@@ -101,7 +113,10 @@ def _get_vectorstore() -> Chroma:
             collection_name=COLLECTION_NAME,
             embedding_function=_get_embeddings(),
             persist_directory=CHROMA_DIR,
+            relevance_score_fn=l2_relevance_score,
+            create_collection_if_not_exists=False,
         )
+        validate_collection(_vectorstore._collection, EMBEDDING_MODEL)
     return _vectorstore
 
 
@@ -169,6 +184,8 @@ def search_tickets_by_category(category: str) -> str:
     VPN, Password, Software Access, Hardware, Email, Printer, Network,
     ERP Access. Use this when user asks about a specific type of IT issue.
     """
+    if category not in TICKET_CATEGORIES:
+        return "Choose a supported ticket category."
     try:
         results = _get_vectorstore().similarity_search(
             f"{category} issue resolution",
@@ -182,7 +199,8 @@ def search_tickets_by_category(category: str) -> str:
         for doc in results:
             meta = doc.metadata
             summaries.append(
-                f"Ticket {meta.get('ticket_id')}: {doc.page_content[:200]}"
+                f"Ticket {sanitize_external_text(str(meta.get('ticket_id', '')))}: "
+                f"{sanitize_external_text(doc.page_content)[:200]}"
             )
 
         return (
@@ -190,7 +208,8 @@ def search_tickets_by_category(category: str) -> str:
             + "\n\n".join(summaries)
         )
     except Exception as e:
-        return f"Search error: {str(e)}"
+        logger.error("Category search failed: %s", safe_error_type(e))
+        return "Category search is unavailable right now."
 
 
 @tool
@@ -221,7 +240,8 @@ def count_tickets_by_category(category: str = "all") -> str:
         total = sum(counts.values())
         return f"Ticket distribution ({total} total):\n{summary}"
     except Exception as e:
-        return f"Count error: {str(e)}"
+        logger.error("Category count failed: %s", safe_error_type(e))
+        return "Ticket counts are unavailable right now."
 
 
 @tool
@@ -267,7 +287,8 @@ def get_resolution_time_stats(category: str = "all") -> str:
 
         return "Resolution time by category:\n" + "\n".join(lines)
     except Exception as e:
-        return f"Stats error: {str(e)}"
+        logger.error("Resolution stats failed: %s", safe_error_type(e))
+        return "Resolution statistics are unavailable right now."
 
 
 @tool
@@ -292,10 +313,7 @@ def check_live_servicenow_status() -> str:
 
     connection_result = servicenow_test_connection()
     if not connection_result["success"]:
-        return (
-            f"ServiceNow connection exists but failed: "
-            f"{connection_result['message']}"
-        )
+        return "ServiceNow connection check failed."
 
     state_counts = live_incident_count_by_state()
     if not state_counts:
@@ -308,7 +326,7 @@ def check_live_servicenow_status() -> str:
         f"State {state}: {count} incidents"
         for state, count in state_counts.items()
     ]
-    return (
+    return sanitize_external_text(
         "Live ServiceNow status (real-time, not cached):\n"
         + "\n".join(summary_lines)
     )
@@ -359,23 +377,25 @@ def run_tool_agent(question: str) -> dict:
             {"messages": [{"role": "user", "content": pipeline_question}]},
             config={"recursion_limit": 8},
         )
-        answer = result["messages"][-1].content or "I could not find an answer."
+        answer = sanitize_external_text(
+            result["messages"][-1].content or "I could not find an answer."
+        )
         response = {
             "answer": answer,
             "escalation": False,
-            "tier": "Tier 1",
-            "confidence_score": 0.8,
+            "tier": None,
+            "confidence_score": None,
+            "tool_status": "completed",
             "pii_detected": detected_pii,
         }
     except Exception as e:
+        logger.error("Analytical query failed: %s", safe_error_type(e))
         response = {
-            "answer": (
-                "I encountered an error processing "
-                f"your analytical query: {str(e)}"
-            ),
+            "answer": "I couldn't process that analytical query right now.",
             "escalation": False,
-            "tier": "Tier 1",
-            "confidence_score": 0.5,
+            "tier": None,
+            "confidence_score": None,
+            "tool_status": "unavailable",
             "pii_detected": detected_pii,
         }
 
@@ -395,6 +415,7 @@ def run_tool_agent(question: str) -> dict:
 
 class AgentState(TypedDict):
     question: str
+    category: Optional[str]
     context: Optional[str]
     answer: Optional[str]
     escalation: Optional[bool]
@@ -408,14 +429,14 @@ class AgentState(TypedDict):
     retrieved_sources: Optional[list]
 
 
-def _parse_doc_to_source(doc, score: float) -> dict:
-    content = doc.page_content
+def _parse_doc_to_source(doc, score: float, content: str | None = None) -> dict:
+    content = content if content is not None else sanitize_external_text(doc.page_content)
     meta = doc.metadata
     issue_m = re.search(r"\| Issue: (.*?) \| Resolution:", content, re.DOTALL)
     resolution_m = re.search(r"\| Resolution: (.*?) \| Resolved in:", content, re.DOTALL)
     return {
-        "ticket_id": meta.get("ticket_id", ""),
-        "category": meta.get("category", ""),
+        "ticket_id": sanitize_external_text(str(meta.get("ticket_id", ""))),
+        "category": sanitize_external_text(str(meta.get("category", ""))),
         "issue": issue_m.group(1).strip() if issue_m else "",
         "resolution": resolution_m.group(1).strip() if resolution_m else "",
         "resolved_in_minutes": meta.get("resolved_in_minutes", 30),
@@ -435,6 +456,7 @@ def broaden_query(
       2 = strip to core category/keyword only
     Fail-safe: returns original question unchanged if broadening fails.
     """
+    original_question = sanitize_external_text(original_question)
     try:
         llm = llm_getter()
 
@@ -458,7 +480,7 @@ def broaden_query(
             )
 
         response = llm.invoke(prompt)
-        broadened = response.content.strip()
+        broadened = sanitize_external_text(response.content.strip())
 
         if len(broadened) < 3:
             return original_question
@@ -469,7 +491,11 @@ def broaden_query(
 
 
 # Agent 1: Retrieval Agent ---------------------------------------------------
-@traceable(name="Retrieval Agent")
+@traceable(
+    name="Retrieval Agent",
+    process_inputs=sanitize_trace_payload,
+    process_outputs=sanitize_trace_payload,
+)
 def retrieval_agent(state: AgentState) -> dict:
     retry_count = state.get("retry_count", 0)
     search_question = state.get("question", "")
@@ -486,12 +512,21 @@ def retrieval_agent(state: AgentState) -> dict:
             "query_used": search_question,
         })
 
+    search_kwargs = {"k": TOP_K}
+    if state.get("category"):
+        search_kwargs["filter"] = {"category": state["category"]}
     results = _get_vectorstore().similarity_search_with_relevance_scores(
-        search_question, k=TOP_K
+        search_question, **search_kwargs
     )
-    context = "\n\n".join(doc.page_content for doc, _ in results)
+    # Sanitize on retrieval too: older indexes and the manual watcher may
+    # contain records written before the batch normalization boundary.
+    safe_contents = [sanitize_external_text(doc.page_content) for doc, _ in results]
+    context = "\n\n".join(safe_contents)
     top_score = results[0][1] if results else 0.0
-    retrieved_sources = [_parse_doc_to_source(doc, score) for doc, score in results]
+    retrieved_sources = [
+        _parse_doc_to_source(doc, score, content)
+        for (doc, score), content in zip(results, safe_contents)
+    ]
     return {
         "context": context,
         "confidence_score": top_score,
@@ -501,16 +536,28 @@ def retrieval_agent(state: AgentState) -> dict:
 
 
 # Agent 2: Answer Agent -------------------------------------------------------
-@traceable(name="Answer Agent")
+@traceable(
+    name="Answer Agent",
+    process_inputs=sanitize_trace_payload,
+    process_outputs=sanitize_trace_payload,
+)
 def answer_agent(state: AgentState) -> dict:
+    safe_context = sanitize_external_text(state["context"] or "")
+    if not safe_context.strip():
+        return {"answer": NO_EVIDENCE_ANSWER}
+    safe_question = sanitize_external_text(state["question"] or "")
     answer = _get_answer_chain().invoke(
-        {"context": state["context"], "question": state["question"]}
+        {"context": safe_context, "question": safe_question}
     )
-    return {"answer": answer}
+    return {"answer": sanitize_external_text(answer)}
 
 
 # Agent 3: Verification Agent --------------------------------------------------
-@traceable(name="Verification Agent")
+@traceable(
+    name="Verification Agent",
+    process_inputs=sanitize_trace_payload,
+    process_outputs=sanitize_trace_payload,
+)
 def verification_agent(state: AgentState) -> AgentState:
     """
     Verifies that the generated answer is fully grounded in the retrieved
@@ -518,8 +565,8 @@ def verification_agent(state: AgentState) -> AgentState:
     unsupported claims. Sets state['grounded'] (bool) and
     state['verification_notes'] (str).
     """
-    answer = state.get("answer", "")
-    context = state.get("context", "")
+    answer = sanitize_external_text(state.get("answer", ""))
+    context = sanitize_external_text(state.get("context", ""))
 
     if not answer or not context:
         state["grounded"] = False
@@ -565,21 +612,27 @@ def verification_agent(state: AgentState) -> AgentState:
                 break
 
         state["grounded"] = is_grounded
-        state["verification_notes"] = reason_line or "No reason provided"
+        state["verification_notes"] = sanitize_external_text(
+            reason_line or "No reason provided"
+        )
 
     except Exception as e:
         # Fail safe: if verification itself fails, treat as ungrounded to
         # force escalation rather than silently trusting an unverified answer.
         state["grounded"] = False
         state["verification_notes"] = (
-            f"Verification error: {str(e)} - defaulting to ungrounded for safety"
+            f"Verification error: {safe_error_type(e)} - defaulting to ungrounded for safety"
         )
 
     return state
 
 
 # Agent 4: Triage Agent --------------------------------------------------------
-@traceable(name="Triage Agent")
+@traceable(
+    name="Triage Agent",
+    process_inputs=sanitize_trace_payload,
+    process_outputs=sanitize_trace_payload,
+)
 def triage_agent(state: AgentState) -> dict:
     answer = state["answer"] or ""
     confidence_score = state["confidence_score"] or 0.0
@@ -667,7 +720,9 @@ workflow.add_edge("prepare_retry", "retrieval")
 app_graph = workflow.compile()
 
 
-def _run_agent_pipeline_impl(question: str) -> dict:
+def _run_agent_pipeline_impl(question: str, category: Optional[str] = None) -> dict:
+    if category is not None and category not in TICKET_CATEGORIES:
+        raise ValueError("Unsupported ticket category")
     # PII check — never send raw PII to the LLM. If detected, the masked
     # version is what gets passed to the retrieval agent and onward.
     masked_question, pii_types = mask_pii(question)
@@ -678,6 +733,7 @@ def _run_agent_pipeline_impl(question: str) -> dict:
     result = app_graph.invoke(
         {
             "question": pipeline_question,
+            "category": category,
             "context": None,
             "answer": None,
             "escalation": None,
@@ -711,13 +767,13 @@ def _run_agent_pipeline_impl(question: str) -> dict:
     if config.ENABLE_LIVE_EVAL:
         try:
             relevance = score_response_relevance(
-                question,
-                result.get("answer", ""),
+                pipeline_question,
+                sanitize_external_text(result.get("answer", "")),
                 _get_chat_llm,
             )
             log_live_eval(
-                question=question,
-                answer=result.get("answer", ""),
+                question=pipeline_question,
+                answer=sanitize_external_text(result.get("answer", "")),
                 grounded=result.get("grounded"),
                 verification_notes=result.get("verification_notes", ""),
                 confidence_score=result.get("confidence_score", 0),
@@ -731,6 +787,7 @@ def _run_agent_pipeline_impl(question: str) -> dict:
 
     return {
         "answer": result["answer"],
+        "graph_completed": True,
         "escalation": result["escalation"],
         "tier": result["tier"],
         "confidence_score": result["confidence_score"],
@@ -751,11 +808,12 @@ DEGRADED_PIPELINE_RESPONSE = {
         "I'm having trouble processing your request right now — "
         "please try again in a moment."
     ),
+    "graph_completed": False,
     "escalation": True,
     "tier": "Tier 2",
     "confidence_score": 0.0,
     "pii_detected": [],
-    "grounded": False,
+    "grounded": None,
     "verification_notes": "Pipeline error — degraded response returned.",
     "retry_count": 0,
     "retry_history": [],
@@ -763,17 +821,18 @@ DEGRADED_PIPELINE_RESPONSE = {
 }
 
 
-def run_agent_pipeline(question: str) -> dict:
+def run_agent_pipeline(question: str, category: Optional[str] = None) -> dict:
     """
     Public entry point for the multi-agent pipeline. Wraps the implementation
     so any genuinely unhandled failure returns a safe, escalated degraded
     response instead of crashing the caller. The success path is unchanged.
     """
     try:
-        return _run_agent_pipeline_impl(question)
+        return _run_agent_pipeline_impl(question, category=category)
     except Exception as e:
         logger.error(
-            f"run_agent_pipeline failed, returning degraded response: {e}"
+            "run_agent_pipeline failed, returning degraded response: %s",
+            safe_error_type(e),
         )
         return dict(DEGRADED_PIPELINE_RESPONSE)
 

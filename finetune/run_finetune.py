@@ -13,8 +13,12 @@ Run with:
 import openai
 import os
 import json
+import sys
 import time
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from security import sanitize_external_text
 
 load_dotenv(
     os.path.join(
@@ -29,7 +33,44 @@ client = openai.OpenAI(
 
 FINETUNE_DIR = os.path.dirname(__file__)
 
+def validate_training_file(filepath: str) -> None:
+    """Accept only the sanitized schema emitted by prepare_dataset.py."""
+    def unique_fields(pairs):
+        fields = {}
+        for key, value in pairs:
+            if key in fields:
+                raise ValueError
+            fields[key] = value
+        return fields
+
+    expected_roles = ("system", "user", "assistant")
+    saw_record = False
+    with open(filepath, "r") as f:
+        for line_number, line in enumerate(f, 1):
+            saw_record = True
+            try:
+                record = json.loads(line, object_pairs_hook=unique_fields)
+                if not isinstance(record, dict) or set(record) != {"messages"}:
+                    raise ValueError
+                messages = record["messages"]
+                if not isinstance(messages, list) or len(messages) != len(expected_roles):
+                    raise ValueError
+                for message, expected_role in zip(messages, expected_roles):
+                    if not isinstance(message, dict) or set(message) != {"role", "content"}:
+                        raise ValueError
+                    content = message["content"]
+                    if (message["role"] != expected_role or not isinstance(content, str)
+                            or not content.strip() or sanitize_external_text(content) != content):
+                        raise ValueError
+            except (KeyError, TypeError, ValueError):
+                raise ValueError(
+                    f"Training file has invalid or unsanitized content at line {line_number}"
+                ) from None
+    if not saw_record:
+        raise ValueError("Training file is empty")
+
 def upload_training_file(filepath: str) -> str:
+    validate_training_file(filepath)
     print(f"Uploading {filepath}...")
     with open(filepath, "rb") as f:
         response = client.files.create(

@@ -1,9 +1,10 @@
 """
-Slow end-to-end integration tests — real pipeline, real OpenAI calls.
+API-gated pipeline smoke tests — real pipeline, real OpenAI calls.
 
 These are marked `integration` (so `-m "not integration"` skips them) AND
 guarded by `requires_api_key` (so they auto-skip when OPENAI_API_KEY is absent,
-e.g. in CI without secrets configured). They verify genuine behavior — no mocks.
+e.g. in CI without secrets configured). They check response shape and basic
+refusal behavior without claiming semantic grounding — no mocks.
 """
 
 import os
@@ -18,7 +19,7 @@ requires_api_key = pytest.mark.skipif(
 
 @pytest.mark.integration
 @requires_api_key
-def test_rag_pipeline_returns_grounded_answer():
+def test_rag_pipeline_returns_answer():
     from rag import get_answer
 
     answer = get_answer("printer not working")

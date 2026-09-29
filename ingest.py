@@ -16,17 +16,22 @@ import shutil
 from pathlib import Path
 
 from dotenv import load_dotenv
+load_dotenv()
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from data.tickets import TICKETS
+from config import config
+from index_contract import (
+    COLLECTION_NAME, COLLECTION_CONFIGURATION, COLLECTION_METADATA,
+    l2_relevance_score, validate_collection, validate_embedding_model,
+)
 
 # Configuration -------------------------------------------------------------
-CHROMA_DIR = "chroma_db"
-COLLECTION_NAME = "it_support_tickets"
-EMBEDDING_MODEL = "text-embedding-3-small"
+CHROMA_DIR = config.CHROMA_DB_PATH
+EMBEDDING_MODEL = config.EMBEDDING_MODEL
 
 
 def ticket_to_string(ticket: dict) -> str:
@@ -41,8 +46,8 @@ def ticket_to_string(ticket: dict) -> str:
 
 
 def main() -> None:
-    # Step 1: load environment variables (expects OPENAI_API_KEY in .env)
-    load_dotenv()
+    validate_embedding_model(EMBEDDING_MODEL)
+    # Step 1: environment variables were loaded before importing config.
 
     # Start from a clean collection so re-running doesn't duplicate or leave
     # stale tickets from a previous ingest.
@@ -77,7 +82,11 @@ def main() -> None:
         embedding=embeddings,
         collection_name=COLLECTION_NAME,
         persist_directory=CHROMA_DIR,
+        collection_configuration=COLLECTION_CONFIGURATION,
+        collection_metadata=COLLECTION_METADATA,
+        relevance_score_fn=l2_relevance_score,
     )
+    validate_collection(vectorstore._collection, EMBEDDING_MODEL)
 
     # Step 6: final confirmation.
     print(f"Done. {len(documents)} tickets stored in ChromaDB.")

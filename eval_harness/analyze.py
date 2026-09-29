@@ -1,18 +1,15 @@
 """
 Honest re-analysis of harness groundedness/relevance averages.
 
-Correctly-refused out-of-scope questions score 0 on groundedness and relevance
-by construction — there is no context to be grounded in, and refusing is the
-right behaviour, so those zeros are a metric artifact rather than a quality
-signal. This script reports TWO numbers per dimension:
+Correctly-refused out-of-scope questions may have zero or unchecked
+groundedness/relevance under the recorded run's scoring method. This script
+reports TWO numbers per dimension:
 
-    1. overall average (every scored case, unchanged)
+    1. overall average (every checked case, unchanged)
     2. average excluding CORRECT refusals
 
 Only correct refusals are excluded. A *false* refusal (a question that should
-have been answered but was refused) is a genuine failure and is intentionally
-kept in both numbers. This is a more truthful way to read the metric — not a
-way to inflate it.
+have been answered but was refused) stays in both views.
 """
 
 import json

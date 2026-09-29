@@ -40,13 +40,17 @@ from connectors.servicenow_connector import (
     fetch_incidents_batch as fetch_servicenow_batch,
 )
 from normalize import normalize_all_sources
-
-CHROMA_DIR = os.getenv(
-    "CHROMA_DB_PATH",
-    os.path.join(os.path.dirname(__file__), "chroma_db"),
+from error_handling import safe_error_type
+from config import config
+from index_contract import (
+    COLLECTION_NAME, COLLECTION_CONFIGURATION, COLLECTION_METADATA,
+    l2_relevance_score, validate_collection, validate_embedding_model,
 )
 
+CHROMA_DIR = config.CHROMA_DB_PATH
+
 def run_multi_source_ingest():
+    validate_embedding_model(config.EMBEDDING_MODEL)
     logger.info(
         "Starting multi-source ingestion pipeline"
     )
@@ -64,7 +68,7 @@ def run_multi_source_ingest():
             f"Kaggle: {len(kaggle_tickets)} tickets"
         )
     except Exception as e:
-        logger.error(f"Kaggle connector failed: {e}")
+        logger.error("Kaggle connector failed: %s", safe_error_type(e))
         kaggle_tickets = []
 
     logger.info(
@@ -77,7 +81,7 @@ def run_multi_source_ingest():
         )
     except Exception as e:
         logger.error(
-            f"GitHub connector failed: {e}"
+            f"GitHub connector failed: {safe_error_type(e)}"
         )
         github_tickets = []
 
@@ -92,7 +96,7 @@ def run_multi_source_ingest():
         )
     except Exception as e:
         logger.error(
-            f"HuggingFace connector failed: {e}"
+            f"HuggingFace connector failed: {safe_error_type(e)}"
         )
         hf_tickets = []
 
@@ -107,7 +111,7 @@ def run_multi_source_ingest():
                 f"ServiceNow: {len(servicenow_tickets)} tickets"
             )
         except Exception as e:
-            logger.error(f"ServiceNow connector failed: {e}")
+            logger.error("ServiceNow connector failed: %s", safe_error_type(e))
             servicenow_tickets = []
     else:
         logger.info(
@@ -130,18 +134,18 @@ def run_multi_source_ingest():
     )
 
     logger.info("Clearing existing ChromaDB collection...")
+    import chromadb
+    from chromadb.errors import NotFoundError
+
+    client = chromadb.PersistentClient(path=CHROMA_DIR)
     try:
-        import chromadb
-        client = chromadb.PersistentClient(
-            path=CHROMA_DIR
-        )
-        try:
-            client.delete_collection("it_support_tickets")
-            logger.info("Existing collection deleted")
-        except Exception:
-            logger.info("No existing collection to delete")
-    except Exception as e:
-        logger.info(f"Could not clear collection: {e}")
+        existing = client.get_collection(COLLECTION_NAME)
+    except NotFoundError:
+        logger.info("No existing collection to delete")
+    else:
+        validate_collection(existing, config.EMBEDDING_MODEL)
+        client.delete_collection(COLLECTION_NAME)
+        logger.info("Existing collection deleted")
 
     logger.info(
         "Embedding and storing in ChromaDB..."
@@ -151,9 +155,7 @@ def run_multi_source_ingest():
     from langchain_openai import OpenAIEmbeddings
     from langchain_core.documents import Document
 
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small"
-    )
+    embeddings = OpenAIEmbeddings(model=config.EMBEDDING_MODEL)
 
     documents = []
     for ticket in all_tickets:
@@ -196,9 +198,13 @@ def run_multi_source_ingest():
             vectorstore = Chroma.from_documents(
                 documents=batch,
                 embedding=embeddings,
-                collection_name="it_support_tickets",
-                persist_directory=CHROMA_DIR
+                collection_name=COLLECTION_NAME,
+                persist_directory=CHROMA_DIR,
+                collection_configuration=COLLECTION_CONFIGURATION,
+                collection_metadata=COLLECTION_METADATA,
+                relevance_score_fn=l2_relevance_score,
             )
+            validate_collection(vectorstore._collection, config.EMBEDDING_MODEL)
         else:
             vectorstore.add_documents(batch)
 

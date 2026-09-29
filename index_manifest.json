@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "collection_name": "it_support_tickets",
+  "tracked_snapshot_commit": "431b8e4e21d5bb0d6d6a9a0b5efdce43c4f3c741",
+  "tracked_record_count": 750,
+  "embedding_model": "text-embedding-3-small",
+  "embedding_dimensions": 1536,
+  "distance_metric": "l2",
+  "relevance_conversion": "1 - raw_distance / sqrt(2)",
+  "metadata_fields": [
+    "ticket_id",
+    "category",
+    "source",
+    "resolved_in_minutes"
+  ],
+  "sources": [
+    {
+      "name": "synthetic",
+      "identifier": "data/tickets.py",
+      "records": 152,
+      "historical_revision": null
+    },
+    {
+      "name": "github",
+      "identifier": "microsoft/vscode (bug); kubernetes/kubernetes (kind/bug)",
+      "records": 496,
+      "historical_revision": null
+    },
+    {
+      "name": "huggingface_servicenow",
+      "identifier": "6StringNinja/synthetic-servicenow-incidents (train)",
+      "records": 97,
+      "historical_revision": null
+    },
+    {
+      "name": "kaggle",
+      "identifier": "suraj520/customer-support-ticket-dataset",
+      "records": 5,
+      "historical_revision": null
+    }
+  ],
+  "provenance_limitations": [
+    "Source dataset revisions and GitHub issue cutoffs were not recorded during the historical build.",
+    "The tracked Chroma collection has no embedding-model metadata; the model is supported by the ingestion scripts and 1536-dimensional index, not by a stored model identifier.",
+    "The Chroma package version used for the historical build was not recorded."
+  ]
+}

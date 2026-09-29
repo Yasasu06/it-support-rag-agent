@@ -11,6 +11,8 @@ import base64
 import os
 from typing import Optional
 from dotenv import load_dotenv
+from security import sanitize_external_text
+from error_handling import safe_error_type
 
 load_dotenv()
 
@@ -85,7 +87,7 @@ def extract_text_from_image(
         if user_context:
             prompt_text += (
                 f"\n\nAdditional context from the user: "
-                f"{user_context}"
+                f"{sanitize_external_text(user_context)}"
             )
 
         response = client.chat.completions.create(
@@ -126,11 +128,8 @@ def extract_text_from_image(
         return {
             "success": False,
             "extracted_text": "",
-            "error": (
-                f"Could not process image: {str(e)}. "
-                f"Please describe your issue in text "
-                f"instead."
-            )
+            "error": "Could not process image. Please describe your issue in text instead.",
+            "error_type": safe_error_type(e),
         }
 
 

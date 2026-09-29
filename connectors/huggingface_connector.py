@@ -6,6 +6,7 @@ Hugging Face, which has properly structured resolution fields.
 import os
 import json
 import logging
+from error_handling import safe_error_type
 from dotenv import load_dotenv
 
 load_dotenv(
@@ -184,7 +185,7 @@ def run_huggingface_connector() -> list:
 
     except Exception as e:
         logger.error(
-            f"HuggingFace download failed: {e}"
+            f"HuggingFace download failed: {safe_error_type(e)}"
         )
         logger.info(
             "Falling back to IT incident log dataset..."
@@ -276,7 +277,7 @@ def _fallback_kaggle_download() -> list:
                         return tickets
         except Exception as ex:
             logger.error(
-                f"Fallback {dataset_id} failed: {ex}"
+                f"Fallback {dataset_id} failed: {safe_error_type(ex)}"
             )
 
     logger.warning(
@@ -289,7 +290,3 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     tickets = run_huggingface_connector()
     print(f"\nTotal HuggingFace tickets: {len(tickets)}")
-    if tickets:
-        print("Sample ticket:")
-        import json
-        print(json.dumps(tickets[0], indent=2))

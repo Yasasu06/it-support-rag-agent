@@ -10,6 +10,7 @@ Provides consistent patterns instead of scattered ad-hoc try/excepts:
 import logging
 import functools
 import time
+import re
 from typing import Callable, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,12 @@ class ServiceUnavailableError(Exception):
     """Raised when an external service (OpenAI, ChromaDB, ServiceNow) is
     unavailable after retries."""
     pass
+
+
+def safe_error_type(error: Exception) -> str:
+    """Keep the exception class for diagnostics without logging its message."""
+    name = type(error).__name__
+    return name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) else "Error"
 
 
 def with_retry(
@@ -42,14 +49,14 @@ def with_retry(
                     logger.warning(
                         f"{func.__name__} failed "
                         f"(attempt {attempt}/"
-                        f"{max_attempts}): {e}"
+                        f"{max_attempts}): {safe_error_type(e)}"
                     )
                     if attempt < max_attempts:
                         time.sleep(delay_seconds)
             raise ServiceUnavailableError(
                 f"{func.__name__} failed after "
                 f"{max_attempts} attempts: "
-                f"{last_exception}"
+                f"{safe_error_type(last_exception)}"
             )
         return wrapper
     return decorator
@@ -71,7 +78,7 @@ def safe_fallback(
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                logger.error(f"{log_message}: {e}")
+                logger.error("%s: %s", log_message, safe_error_type(e))
                 return fallback_value
         return wrapper
     return decorator

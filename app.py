@@ -1,15 +1,15 @@
 """
 Streamlit chat interface for the Enterprise IT Support RAG Agent.
 
-Wraps the grounded answer chain in rag.py with a clean, light-themed chat
-UI: suggestion chips, a confidence badge derived from retrieval similarity,
-and an expandable view of the source tickets behind every answer.
+Provides a chat UI with suggestion chips, retrieval and review status,
+and an expandable view of the source tickets behind support answers.
 
 Run with:
     streamlit run app.py
 """
 
 import html
+import hmac
 import os
 import json as _json
 import re
@@ -26,17 +26,18 @@ from langchain_openai import OpenAIEmbeddings
 
 from data.tickets import TICKETS
 from rag import (
-    get_answer,
-    get_answer_with_memory,
     clear_conversation_memory,
     reformulate_query,
-    get_answer_streaming,
 )
 from agent_pipeline import run_agent_pipeline, run_tool_agent
 from security import get_audit_summary
 from live_eval import get_live_eval_summary
 from error_handling import validate_user_input
 from config import config
+from index_contract import (
+    COLLECTION_NAME, MANIFEST, l2_relevance_score, validate_collection,
+    validate_embedding_model,
+)
 from image_processing import (
     validate_image,
     extract_text_from_image,
@@ -89,25 +90,36 @@ FEEDBACK_FILE = os.path.join(
 
 
 def log_feedback(
-    question: str,
-    answer: str,
     rating: str,
-    timestamp: str = None,
-) -> None:
+    *,
+    tier: str | None = None,
+    confidence_score: float | None = None,
+    source_count: int = 0,
+    timestamp: str | None = None,
+) -> bool:
     from datetime import datetime
+
+    if rating not in {"positive", "negative"}:
+        raise ValueError("Invalid feedback rating")
 
     entry = {
         "timestamp": timestamp or datetime.utcnow().isoformat(),
-        "question": question[:200],
-        "answer": answer[:300],
         "rating": rating,
+        "tier": tier if tier in {"Tier 1", "Tier 2"} else None,
+        "confidence_score": round(confidence_score, 3)
+        if isinstance(confidence_score, (int, float)) else None,
+        "source_count": max(0, int(source_count)),
     }
-    with open(FEEDBACK_FILE, "a") as f:
-        f.write(_json.dumps(entry) + "\n")
+    try:
+        with open(FEEDBACK_FILE, "a") as f:
+            f.write(_json.dumps(entry) + "\n")
+    except OSError:
+        logger.warning("Feedback storage is unavailable")
+        return False
+    return True
 
 # Configuration --------------------------------------------------------------
-CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
-COLLECTION_NAME = "it_support_tickets"
+CHROMA_DIR = config.CHROMA_DB_PATH
 # Sourced from config so the UI vectorstore stays in lockstep with the model
 # used to build the index (default unchanged: text-embedding-3-small).
 EMBEDDING_MODEL = config.EMBEDDING_MODEL
@@ -155,68 +167,33 @@ def get_category_color(category: str) -> dict:
 
 TICKETS_BY_ID = {t["ticket_id"]: t for t in TICKETS}
 
-# level -> exact badge HTML
-CONFIDENCE_HTML = {
-    "High": (
-        '<div style="display:inline-flex;align-items:center;gap:0.35rem;'
-        'background:#DCFCE7;color:#166534;border-radius:50px;'
-        'padding:0.3rem 0.85rem;font-size:0.78rem;font-weight:600;'
-        'margin-top:0.5rem;">High Confidence</div>'
-    ),
-    "Medium": (
-        '<div style="display:inline-flex;align-items:center;gap:0.35rem;'
-        'background:#FEF9C3;color:#854D0E;border-radius:50px;'
-        'padding:0.3rem 0.85rem;font-size:0.78rem;font-weight:600;'
-        'margin-top:0.5rem;">Medium Confidence — verify with IT team</div>'
-    ),
-    "Low": (
-        '<div style="display:inline-flex;align-items:center;gap:0.35rem;'
-        'background:#FEE2E2;color:#991B1B;border-radius:50px;'
-        'padding:0.3rem 0.85rem;font-size:0.78rem;font-weight:600;'
-        'margin-top:0.5rem;">Low Confidence — escalate to Tier 2</div>'
-    ),
-}
-
 # Exact warning blocks injected in place of st.info()/st.warning().
 PII_HTML = (
     '<div style="background:#E8EDFF;border-left:3px solid #2453FF;border-radius:8px;'
     'padding:0.75rem 1rem;margin-top:0.5rem;">'
-    '<div style="color:#3730A3;font-weight:600;font-size:0.85rem;">Privacy Protection Active</div>'
+    '<div style="color:#3730A3;font-weight:600;font-size:0.85rem;">Text Masking Applied</div>'
     '<div style="color:#3730A3;font-size:0.8rem;margin-top:0.25rem;">'
-    "Personal information detected in your message was automatically masked "
-    "before processing to protect your privacy."
+    "Detected personal information in your text was masked before support "
+    "model calls. Masking may not identify every sensitive detail."
     "</div></div>"
 )
 
 ESCALATION_HTML = (
     '<div style="background:#FFFBEB;border-left:3px solid #F59E0B;border-radius:8px;'
     'padding:0.75rem 1rem;margin-top:0.5rem;">'
-    '<div style="color:#92400E;font-weight:600;font-size:0.85rem;">Tier 2 Escalation Required</div>'
+    '<div style="color:#92400E;font-weight:600;font-size:0.85rem;">Tier 2 Review Recommended</div>'
     '<div style="color:#92400E;font-size:0.8rem;margin-top:0.25rem;">'
-    "This issue could not be resolved with available knowledge base matches. "
-    "A ticket has been queued in ServiceNow for Tier 2 review."
+    "This response was flagged for further review. "
+    "No ServiceNow ticket was created automatically."
     "</div></div>"
 )
 
 ERROR_MESSAGE = (
-    "Could not connect to knowledge base. "
-    "Ensure ingest.py has been run and your API key is valid."
+    "The knowledge base or model service is unavailable. "
+    "Please try again later."
 )
 
-_summary_path = os.path.join(
-    os.path.dirname(__file__),
-    "ingestion_summary.json"
-)
-if os.path.exists(_summary_path):
-    with open(_summary_path) as _f:
-        _summary = _json.load(_f)
-    _ticket_count = str(_summary.get("total", 150))
-    _source_text = (
-        f"Kaggle + GitHub + Internal"
-    )
-else:
-    _ticket_count = "150"
-    _source_text = "Internal only"
+_ticket_count = str(MANIFEST["tracked_record_count"])
 
 st.set_page_config(
     page_title="IT Support AI",
@@ -471,8 +448,7 @@ div.app-header, .app-header {
   display: none !important;
 }
 
-/* Signal readout - the signature element, replaces
-   confidence badge + match quality bar */
+/* Status readout for retrieval, grounding, and review */
 .signal-readout {
   display: inline-flex; align-items: center; gap: 0.6rem;
   background: var(--surface-alt);
@@ -490,18 +466,6 @@ div.app-header, .app-header {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 600; font-size: 0.8rem;
 }
-.signal-readout .ticks {
-  display: flex; gap: 2px; align-items: flex-end;
-}
-.signal-readout .tick {
-  width: 3px; background: var(--border); border-radius: 1px;
-}
-.signal-readout.grounded .signal-value { color: #059669 !important; }
-.signal-readout.grounded .tick.on { background: #059669; }
-.signal-readout.warning .signal-value { color: #D97706 !important; }
-.signal-readout.warning .tick.on { background: #D97706; }
-.signal-readout.danger .signal-value { color: #DC2626 !important; }
-.signal-readout.danger .tick.on { background: #DC2626; }
 
 /* Source ticket cards */
 .ticket-card {
@@ -669,12 +633,17 @@ div[class*="st-key-chip_"] button:hover, div[class*="st-key-chip_"] > div > butt
 # Cached resources -------------------------------------------------------------
 @st.cache_resource
 def get_app_vectorstore():
+    validate_embedding_model(EMBEDDING_MODEL)
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
-    return Chroma(
+    vectorstore = Chroma(
         collection_name=COLLECTION_NAME,
         embedding_function=embeddings,
         persist_directory=CHROMA_DIR,
+        relevance_score_fn=l2_relevance_score,
+        create_collection_if_not_exists=False,
     )
+    validate_collection(vectorstore._collection, EMBEDDING_MODEL)
+    return vectorstore
 
 
 # Helpers ------------------------------------------------------------------------
@@ -682,45 +651,74 @@ def escape_html(text: str) -> str:
     return html.escape(text).replace("\n", "<br>")
 
 
-def confidence_from_score(score: float) -> str:
-    if score >= config.CONFIDENCE_HIGH_THRESHOLD:
-        return "High"
-    if score >= config.CONFIDENCE_MEDIUM_THRESHOLD:
-        return "Medium"
-    return "Low"
+def response_status_labels(msg: dict) -> list[tuple[str, str]]:
+    """Describe observed processing without treating relevance as probability."""
+    if msg.get("response_kind") == "analytical":
+        status = (
+            "Analytical tool completed"
+            if msg.get("tool_status") == "completed"
+            else "Analytical tool unavailable"
+        )
+        return [("Tool status", status)]
+    if msg.get("response_kind") != "rag":
+        return []
+
+    source_count = len(msg.get("sources") or [])
+    source_label = f"{source_count} source ticket{'s' if source_count != 1 else ''} retrieved"
+    grounded = msg.get("grounded")
+    grounding_label = (
+        "Check passed" if grounded is True
+        else "Review needed" if grounded is False
+        else "Not run"
+    )
+    review_label = (
+        "Tier 2 recommended" if msg.get("escalation")
+        else "Tier 1 response"
+    )
+    return [
+        ("Retrieval", source_label),
+        ("Grounding", grounding_label),
+        ("Review", review_label),
+    ]
 
 
-def render_signal_readout(level: str, top_score: float) -> None:
-    # The signature "signal readout" — one component replacing the old
-    # confidence badge + match-quality bar. The score/threshold LOGIC is
-    # unchanged (same similarity_pct formula and level bands); only the visual
-    # form changes: a mono percentage plus five rising tick marks.
-    similarity_pct = min(int(top_score * 400), 99) if top_score > 0 else 0
-    tick_count = min(5, max(1, round(similarity_pct / 20)))
-    ticks_html = "".join(
-        f'<div class="tick {"on" if i < tick_count else ""}" '
-        f'style="height:{8 + i * 3}px"></div>'
-        for i in range(5)
-    )
-    level_class = (
-        "grounded" if level == "High"
-        else "warning" if level == "Medium"
-        else "danger"
-    )
-    st.markdown(
-        f'<div class="signal-readout {level_class}">'
-        f'<span class="signal-label">Confidence</span>'
-        f'<span class="signal-value">{similarity_pct}%</span>'
-        f'<div class="ticks">{ticks_html}</div>'
-        f'<span class="signal-label">{level.upper()}</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+def session_retry_summary(messages: list[dict]) -> tuple[int, int, int]:
+    """Count broadened answers from completed support graph runs only."""
+    support_answers = [
+        msg for msg in messages
+        if msg.get("role") == "assistant"
+        and msg.get("response_kind") == "rag"
+        and msg.get("graph_completed") is True
+    ]
+    retried = sum(1 for msg in support_answers if (msg.get("retry_count") or 0) > 0)
+    total = len(support_answers)
+    rate = int(round(100 * retried / total)) if total else 0
+    return retried, total, rate
+
+
+def format_grounded_rate(rate: float | None) -> str:
+    """Show unchecked grounding as unavailable, not as a failed check."""
+    return f"{rate:.0%}" if rate is not None else "N/A"
+
+
+def render_response_status(msg: dict) -> None:
+    labels = response_status_labels(msg)
+    if labels:
+        st.markdown(
+            "".join(
+                '<div class="signal-readout">'
+                f'<span class="signal-label">{html.escape(label)}</span>'
+                f'<span class="signal-value">{html.escape(value)}</span>'
+                '</div>'
+                for label, value in labels
+            ),
+            unsafe_allow_html=True,
+        )
 
 
 def render_retry_badge(retry_count) -> None:
-    # Surfaces the adaptive-retry system: when the first retrieval had low
-    # confidence, the pipeline broadened the query and searched again. This just
+    # Surfaces the adaptive-retry system when retrieval or grounding caused
+    # another pass. This just
     # reads the retry_count the pipeline already returns — no logic change. Shown
     # only when it actually happened; nothing rendered when retry_count is 0.
     count = retry_count or 0
@@ -794,25 +792,25 @@ def render_user_message(content: str, image_extract: str = "") -> None:
                 st.write(image_extract)
 
 
-def stream_text(text: str):
-    """Yields a string word-by-word so it can be fed to st.write_stream."""
-    import re
-
-    for chunk in re.split(r"(\s+)", text):
-        if chunk:
-            yield chunk
-
-
-def render_feedback_buttons(question: str, answer: str, msg_key: str) -> None:
+def render_feedback_buttons(msg: dict, msg_key: str) -> None:
     fb_col1, fb_col2, fb_col3 = st.columns([1, 1, 8])
+    metadata = {
+        "tier": msg.get("tier"),
+        "confidence_score": msg.get("confidence_score"),
+        "source_count": len(msg.get("sources") or []),
+    }
     with fb_col1:
         if st.button("Helpful", key=f"up_{msg_key}", help="This answer was helpful"):
-            log_feedback(question, answer, "positive")
-            st.toast("Thanks for the feedback!")
+            if log_feedback("positive", **metadata):
+                st.toast("Thanks for the feedback!")
+            else:
+                st.warning("Feedback could not be saved right now.")
     with fb_col2:
         if st.button("Not helpful", key=f"down_{msg_key}", help="This answer wasn't helpful"):
-            log_feedback(question, answer, "negative")
-            st.toast("Feedback recorded — we'll work on improving this.")
+            if log_feedback("negative", **metadata):
+                st.toast("Feedback recorded — we'll work on improving this.")
+            else:
+                st.warning("Feedback could not be saved right now.")
 
 
 def render_assistant_message(msg: dict, idx: int) -> None:
@@ -820,15 +818,14 @@ def render_assistant_message(msg: dict, idx: int) -> None:
         st.markdown(msg["content"])
         if msg.get("pii_detected"):
             st.markdown(PII_HTML, unsafe_allow_html=True)
-        if msg.get("confidence"):
-            render_signal_readout(msg["confidence"], msg.get("confidence_score") or 0.0)
-            render_retry_badge(msg.get("retry_count", 0))
+        render_response_status(msg)
+        render_retry_badge(msg.get("retry_count", 0))
         if msg.get("escalation"):
             st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
         if msg.get("sources"):
             render_sources_expander(msg["sources"], idx)
         if msg["content"] != ERROR_MESSAGE:
-            render_feedback_buttons(msg.get("question", ""), msg["content"], str(idx))
+            render_feedback_buttons(msg, str(idx))
 
 
 def get_sources_and_top_score(query: str, category: str = "All Categories"):
@@ -902,16 +899,10 @@ def process_question(question: str, category: str, image_extract: str = "") -> N
 
     analytical = is_analytical_query(pipeline_question)
 
-    # Analytical questions ("how many", "average resolution time", ...) go
-    # to the tool-calling agent as-is — the category-focus suffix, recent
-    # conversation history, and reformulate_query rewrite below are tuned
-    # for semantic retrieval/grounding and would just add noise to a
-    # tool-selection prompt, so we skip them for this path.
+    # Analytical questions use the separate tool agent. The category selector
+    # filters support-answer retrieval only; tool calls choose their own inputs.
     augmented_question = pipeline_question
     if not analytical:
-        if category != "All Categories":
-            augmented_question = f"{pipeline_question} Focus on {category} related tickets if possible."
-
         # Give follow-up questions ("what about that?") access to recent
         # conversation context, then let reformulate_query clean up the result
         # before it hits retrieval/run_agent_pipeline.
@@ -922,7 +913,11 @@ def process_question(question: str, category: str, image_extract: str = "") -> N
                 role = "User" if prior_msg["role"] == "user" else "Assistant"
                 history_text += f"{role}: {str(prior_msg['content'])[:200]}\n"
             augmented_question = f"{augmented_question}{history_text}"
-        augmented_question = reformulate_query(augmented_question)
+        try:
+            augmented_question = reformulate_query(augmented_question)
+        except Exception:
+            st.error(ERROR_MESSAGE)
+            return
 
     st.session_state.messages.append(
         {"role": "user", "content": display_text, "image_extract": image_extract}
@@ -934,43 +929,46 @@ def process_question(question: str, category: str, image_extract: str = "") -> N
             with st.spinner(":shimmer[Searching knowledge base...]"):
                 if analytical:
                     result = run_tool_agent(pipeline_question)
-                    sources, top_score = [], result["confidence_score"]
+                    sources = []
                 else:
-                    result = run_agent_pipeline(augmented_question)
+                    selected_category = None if category == "All Categories" else category
+                    result = run_agent_pipeline(
+                        augmented_question, category=selected_category
+                    )
                     sources = result.get("sources", [])
-                    top_score = result.get("confidence_score") or 0.0
 
                 answer = result["answer"]
                 escalation = result["escalation"]
-                tier = result["tier"]
                 pii_detected = result["pii_detected"]
 
-            level = confidence_from_score(top_score)
+            assistant_msg = {
+                "role": "assistant",
+                "content": answer,
+                "question": display_text,
+                "response_kind": "analytical" if analytical else "rag",
+                "graph_completed": result.get("graph_completed", False),
+                "tool_status": result.get("tool_status"),
+                "confidence_score": result.get("confidence_score"),
+                "sources": sources,
+                "grounded": result.get("grounded"),
+                "escalation": escalation,
+                "tier": result.get("tier"),
+                "pii_detected": pii_detected,
+                "retry_count": result.get("retry_count", 0),
+            }
 
-            st.write_stream(stream_text(answer))
+            # The graph completes verification, retry, and triage before display.
+            st.markdown(answer)
             if pii_detected:
                 st.markdown(PII_HTML, unsafe_allow_html=True)
-            render_signal_readout(level, top_score)
+            render_response_status(assistant_msg)
             render_retry_badge(result.get("retry_count", 0))
             if escalation:
                 st.markdown(ESCALATION_HTML, unsafe_allow_html=True)
             if sources:
                 render_sources_expander(sources, len(st.session_state.messages))
 
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": answer,
-                    "question": display_text,
-                    "confidence": level,
-                    "confidence_score": top_score,
-                    "sources": sources,
-                    "escalation": escalation,
-                    "tier": tier,
-                    "pii_detected": pii_detected,
-                    "retry_count": result.get("retry_count", 0),
-                }
-            )
+            st.session_state.messages.append(assistant_msg)
         except Exception:
             st.error(ERROR_MESSAGE)
             st.session_state.messages.append(
@@ -1024,20 +1022,35 @@ if "prefill" not in st.session_state:
     st.session_state.prefill = None
 
 
-# Anonymous per-session visit logging ---------------------------------------------
-# Logs a timestamp + random session id once per browser session (no PII, no IP).
+# Per-session visit logging -----------------------------------------------------
+# Logs a timestamp + random session id once per browser session; no IP, name,
+# or email field is collected here.
 # Guarded by "session_id not in session_state" so it fires once per session, not
 # on every question or rerun.
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
     log_visit(st.session_state.session_id)
 
-# Private, password-protected analytics view ---------------------------------------
-# Only appears when the URL carries ?admin=<secret> matching the ADMIN_ANALYTICS_KEY
-# env var. Regular users never see it and cannot reach it without the secret; if
-# the env var is unset, the feature is entirely inert.
+# Private, session-authenticated analytics view ------------------------------------
+def admin_key_matches(candidate: str, configured_key: str) -> bool:
+    return bool(configured_key) and hmac.compare_digest(candidate, configured_key)
+
+
 ADMIN_KEY = os.getenv("ADMIN_ANALYTICS_KEY", "")
-if ADMIN_KEY and st.query_params.get("admin") == ADMIN_KEY:
+if ADMIN_KEY:
+    with st.sidebar.expander("Admin analytics"):
+        if not st.session_state.get("admin_authenticated", False):
+            with st.form("admin_login", clear_on_submit=True):
+                supplied_key = st.text_input("Admin key", type="password")
+                submitted = st.form_submit_button("Unlock")
+            if submitted:
+                if admin_key_matches(supplied_key, ADMIN_KEY):
+                    st.session_state.admin_authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Invalid admin key.")
+
+if ADMIN_KEY and st.session_state.get("admin_authenticated", False):
     st.markdown("## Private Analytics (Admin Only)")
     summary = get_analytics_summary()
 
@@ -1060,11 +1073,9 @@ if ADMIN_KEY and st.query_params.get("admin") == ADMIN_KEY:
         st.text("No visits logged yet.")
 
     st.markdown("---")
-    st.markdown(
-        "*This is a private admin view. "
-        "Remove ?admin=... from the URL to return to "
-        "the normal app.*"
-    )
+    if st.button("Return to app"):
+        st.session_state.admin_authenticated = False
+        st.rerun()
     st.stop()
 
 
@@ -1090,13 +1101,15 @@ with st.sidebar:
         "<p style='color:#64748B;font-size:0.72rem;"
         "line-height:1.5;word-wrap:break-word;"
         "overflow-wrap:break-word;max-width:240px'>"
-        "AI assistant grounded in enterprise IT "
-        "incident data. Cites sources and flags "
-        "confidence on every response.</p>",
+        "IT support answers draw on incident data, cite sources, "
+        "and show retrieval and review status.</p>",
         unsafe_allow_html=True
     )
 
-    category = st.selectbox("Filter by category", CATEGORIES, key="category_filter")
+    category = st.selectbox(
+        "Support answer category", CATEGORIES, key="category_filter",
+        help="Filters retrieved tickets for support answers. Analytical tools use their own inputs.",
+    )
     st.divider()
 
     st.markdown(
@@ -1109,7 +1122,7 @@ with st.sidebar:
     )
     col_a, col_b = st.columns(2)
     with col_a:
-        st.metric("Tickets", _ticket_count)
+        st.metric("Tracked Snapshot Tickets", _ticket_count)
         st.metric("Model", "GPT-4o")
     with col_b:
         st.metric("Cats", "8")
@@ -1139,7 +1152,6 @@ with st.sidebar:
             st.metric("Escalated", summary["escalated_queries"])
         with col_d:
             st.metric("PII Caught", summary["pii_queries"])
-            st.metric("Avg Conf", f"{summary['avg_confidence']:.0%}")
 
     # Rate-limit usage indicator (transparency, not enforcement) — helps a user
     # see they're approaching the limit rather than being surprised by a block.
@@ -1176,7 +1188,7 @@ with tab1:
   <div class="badge">IT</div>
   <div>
     <div class="title">IT Support AI Assistant</div>
-    <div class="subtitle">{_ticket_count} INCIDENTS · {len(CATEGORIES) - 1} CATEGORIES · GPT-4O-MINI</div>
+  <div class="subtitle">TRACKED SNAPSHOT: {_ticket_count} RECORDS · {len(CATEGORIES) - 1} CATEGORIES · CONFIGURABLE MODEL</div>
   </div>
 </div>
 ''',
@@ -1203,6 +1215,10 @@ with tab1:
             "Or upload a screenshot of your error (optional)",
             type=["png", "jpg", "jpeg", "webp"],
             key=f"screenshot_upload_{st.session_state.uploader_nonce}",
+        )
+        st.caption(
+            "Uploaded screenshots are sent to an external model provider for analysis. "
+            "Remove sensitive details before uploading."
         )
         if uploaded_image is not None:
             analyze_clicked = st.button(
@@ -1272,7 +1288,10 @@ with tab1:
                     # Graceful degradation: log the detail internally, show the
                     # user a generic message (never expose raw exception text),
                     # and fall back to the typed question only.
-                    logger.error("Image extraction failed: %s", extraction["error"])
+                    logger.error(
+                        "Image extraction failed: %s",
+                        extraction.get("error_type", "ProviderError"),
+                    )
                     st.error(
                         "I couldn't read that screenshot. Please describe "
                         "your issue in text instead."
@@ -1296,34 +1315,42 @@ with tab1:
 
 with tab2:
     # Section 1: Data sources -----------------------------------------------------
-    st.markdown("### Data Sources")
+    st.markdown("### Tracked Snapshot Data Sources")
+    st.caption("These counts describe the repository snapshot; an index selected with CHROMA_DB_PATH may differ.")
 
-    _ing_path = os.path.join(os.path.dirname(__file__), "ingestion_summary.json")
-    if os.path.exists(_ing_path):
-        with open(_ing_path) as _ing_f:
-            _ing = _json.load(_ing_f)
-    else:
-        _ing = {"synthetic": 150, "kaggle": 0, "github": 0, "huggingface": 0, "total": 150}
+    _snapshot_sources = {item["name"]: item["records"] for item in MANIFEST["sources"]}
+    _ing = {
+        "synthetic": _snapshot_sources["synthetic"],
+        "kaggle": _snapshot_sources["kaggle"],
+        "github": _snapshot_sources["github"],
+        "huggingface": _snapshot_sources["huggingface_servicenow"],
+    }
 
     _sn_configured = servicenow_configured()
     _sn_status = "Not configured"
     _sn_color = "#94A3B8"
-    if _sn_configured:
-        _sn_result = servicenow_test_connection()
-        if _sn_result["success"]:
+    if not config.ENABLE_SERVICENOW_LIVE:
+        _sn_status = "Disabled"
+    elif _sn_configured:
+        if st.button("Check ServiceNow connection", key="servicenow_connection_check"):
+            st.session_state.servicenow_connection_ok = servicenow_test_connection()["success"]
+        connection_ok = st.session_state.get("servicenow_connection_ok")
+        if connection_ok is True:
             _sn_status = "Live — Connected"
             _sn_color = "#10B981"
-        else:
+        elif connection_ok is False:
             _sn_status = "Configured — Connection Failed"
             _sn_color = "#EF4444"
+        else:
+            _sn_status = "Configured — Not checked"
 
     ds_col1, ds_col2, ds_col3, ds_col4, ds_col5 = st.columns(5)
     with ds_col1:
         st.markdown(f"""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #2453FF;border-radius:10px;padding:1.25rem">
         <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Internal Synthetic</div>
-        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing.get('synthetic', 150)}</div>
-        <div style="font-size:0.75rem;color:#64748B">Enterprise IT Support incident patterns</div>
+        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing['synthetic']}</div>
+        <div style="font-size:0.75rem;color:#64748B">Fictional internal-style support records</div>
         <div style="margin-top:0.75rem;font-size:0.72rem;color:#2453FF;font-weight:500">8 categories · Structured format</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1332,9 +1359,9 @@ with tab2:
         st.markdown(f"""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #10B981;border-radius:10px;padding:1.25rem">
         <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Kaggle Dataset</div>
-        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing.get('kaggle', 0)}</div>
-        <div style="font-size:0.75rem;color:#64748B">Real enterprise support tickets</div>
-        <div style="margin-top:0.75rem;font-size:0.72rem;color:#10B981;font-weight:500">Real-world · Multi-industry</div>
+        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing['kaggle']}</div>
+        <div style="font-size:0.75rem;color:#64748B">Public customer-support dataset</div>
+        <div style="margin-top:0.75rem;font-size:0.72rem;color:#10B981;font-weight:500">Small contribution after deduplication</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1342,8 +1369,8 @@ with tab2:
         st.markdown(f"""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #F59E0B;border-radius:10px;padding:1.25rem">
         <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">GitHub Issues</div>
-        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing.get('github', 0)}</div>
-        <div style="font-size:0.75rem;color:#64748B">Real open source IT issues</div>
+        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing['github']}</div>
+        <div style="font-size:0.75rem;color:#64748B">Transformed public software issues</div>
         <div style="margin-top:0.75rem;font-size:0.72rem;color:#F59E0B;font-weight:500">VS Code · Kubernetes · Terraform</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1352,7 +1379,7 @@ with tab2:
         st.markdown(f"""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #8B5CF6;border-radius:10px;padding:1.25rem">
         <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">HuggingFace ServiceNow</div>
-        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing.get('huggingface', 0)}</div>
+        <div style="font-size:2rem;font-weight:700;color:#0F172A;margin:0.5rem 0">{_ing['huggingface']}</div>
         <div style="font-size:0.75rem;color:#64748B">Synthetic ServiceNow incidents</div>
         <div style="margin-top:0.75rem;font-size:0.72rem;color:#8B5CF6;font-weight:500">ITSM schema · Structured fields</div>
         </div>
@@ -1363,7 +1390,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-left:4px solid #0EA5E9;border-radius:10px;padding:1.25rem">
         <div style="font-size:0.7rem;color:#64748B;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">ServiceNow Live</div>
         <div style="font-size:1rem;font-weight:700;color:{_sn_color};margin:0.5rem 0">{_sn_status}</div>
-        <div style="font-size:0.75rem;color:#64748B">Real-time connection, not batch</div>
+        <div style="font-size:0.75rem;color:#64748B">Optional read connection; no ticket creation</div>
         <div style="margin-top:0.75rem;font-size:0.72rem;color:#0EA5E9;font-weight:500">REST API · Live incidents</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1373,9 +1400,9 @@ with tab2:
     # Section 2: Agent pipeline ----------------------------------------------------
     st.markdown("### Multi-Agent Pipeline")
     st.markdown(
-        "<p style='color:#64748B;font-size:0.85rem;margin-bottom:1rem'>Every query flows through "
-        "a LangGraph orchestrated four-agent pipeline before returning an answer. "
-        "Adaptive retry broadens the query and reruns the full pipeline up to 2×.</p>",
+        "<p style='color:#64748B;font-size:0.85rem;margin-bottom:1rem'>Support questions "
+        "use the retrieval, answer, and triage graph. Verification and adaptive retry "
+        "run when enabled; analytical questions use a separate tool path.</p>",
         unsafe_allow_html=True,
     )
 
@@ -1385,7 +1412,7 @@ with tab2:
       <div style="flex:1;background:#E8EDFF;border:1px solid #C7D2FE;border-radius:10px 0 0 10px;padding:1rem">
         <div style="font-weight:700;font-size:0.82rem;color:#3730A3;margin-bottom:0.25rem">Retrieval Agent</div>
         <div style="font-size:0.72rem;color:#4338CA;line-height:1.5">
-        Searches ChromaDB via semantic similarity. Returns top 3 tickets with scores. Broadens query on retry.</div>
+        Searches ChromaDB for up to 3 tickets, applying the selected category filter. Broadens the query on retry.</div>
         <div style="margin-top:0.6rem;font-size:0.68rem;color:#6366F1;font-weight:500">ChromaDB · OpenAI Embeddings</div>
       </div>
 
@@ -1394,8 +1421,8 @@ with tab2:
       <div style="flex:1;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:0;padding:1rem">
         <div style="font-weight:700;font-size:0.82rem;color:#166534;margin-bottom:0.25rem">Answer Agent</div>
         <div style="font-size:0.72rem;color:#15803D;line-height:1.5">
-        Generates grounded answer using retrieved context only. Cites Ticket IDs. Refuses out-of-scope questions.</div>
-        <div style="margin-top:0.6rem;font-size:0.68rem;color:#16A34A;font-weight:500">GPT-4o-mini · RAG grounding</div>
+        Drafts an answer from retrieved ticket context and cites Ticket IDs.</div>
+        <div style="margin-top:0.6rem;font-size:0.68rem;color:#16A34A;font-weight:500">GPT-4o-mini default · RAG grounding</div>
       </div>
 
       <div style="display:flex;align-items:center;padding:0 0.35rem;color:#CBD5E1;font-size:1.3rem">→</div>
@@ -1403,7 +1430,7 @@ with tab2:
       <div style="flex:1;background:#FFF1F2;border:1px solid #FECDD3;border-radius:0;padding:1rem">
         <div style="font-weight:700;font-size:0.82rem;color:#9F1239;margin-bottom:0.25rem">Verification Agent</div>
         <div style="font-size:0.72rem;color:#BE123C;line-height:1.5">
-        Independent LLM fact-checks every answer against source tickets. Flags hallucinated claims for retry.</div>
+        When enabled, an independent LLM checks support answers against retrieved tickets and flags unsupported claims.</div>
         <div style="margin-top:0.6rem;font-size:0.68rem;color:#E11D48;font-weight:500">GPT-4o-mini judge · Groundedness</div>
       </div>
 
@@ -1412,18 +1439,18 @@ with tab2:
       <div style="flex:1;background:#FFFBEB;border:1px solid #FDE68A;border-radius:0 10px 10px 0;padding:1rem">
         <div style="font-weight:700;font-size:0.82rem;color:#92400E;margin-bottom:0.25rem">Triage Agent</div>
         <div style="font-size:0.72rem;color:#B45309;line-height:1.5">
-        Evaluates confidence score and groundedness. Routes to Tier 1 or Tier 2 escalation automatically.</div>
+        Uses the retrieval routing cutoff and grounding result to label Tier 1 responses or recommend Tier 2 review.</div>
         <div style="margin-top:0.6rem;font-size:0.68rem;color:#D97706;font-weight:500">LangGraph · Auto-routing</div>
       </div>
 
     </div>
     <div style="font-size:0.72rem;color:#94A3B8;margin-bottom:1.5rem">
-    ↩ Adaptive retry: if verification fails or confidence is low, a broadened query reruns the pipeline (max 2 retries).
+    ↩ When enabled, adaptive retry broadens a support query after a failed grounding check or a retrieval score below the routing cutoff (max 2 retries).
     </div>
     """, unsafe_allow_html=True)
 
-    # Section 3: Production features ------------------------------------------------
-    st.markdown("### Production Features")
+    # Section 3: Current capabilities ------------------------------------------------
+    st.markdown("### Current Capabilities")
 
     pf_row1_col1, pf_row1_col2, pf_row1_col3 = st.columns(3)
     with pf_row1_col1:
@@ -1431,7 +1458,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">PII Detection</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Microsoft Presidio masks emails, phones, and SSNs before any data reaches the LLM. Full audit trail logged.</div>
+        Microsoft Presidio masks detected typed text and retrieved content before support model calls. The local audit log stores query metadata.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1440,16 +1467,16 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Live Evaluation</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Every production query scored in real time: relevance, groundedness, and latency. Metrics visible in System tab.</div>
+        When enabled, completed support-answer runs record relevance, grounding status, and latency. Analytical tool answers are excluded.</div>
         </div>
         """, unsafe_allow_html=True)
 
     with pf_row1_col3:
         st.markdown("""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
-        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Real-time Ingestion</div>
+        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">File Ingestion Utility</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Watchdog file monitor auto-ingests new tickets dropped into new_tickets/ folder. ChromaDB updates in under 4 seconds.</div>
+        An optional file watcher can ingest new tickets from new_tickets/ when started manually.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1466,9 +1493,9 @@ with tab2:
     with pf_row2_col2:
         st.markdown("""
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
-        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Confidence Scoring</div>
+        <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Retrieval Review</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Calibrated similarity thresholds route low-confidence queries to Tier 2 escalation automatically. No silent failures.</div>
+        A raw retrieval relevance signal below the configured routing cutoff recommends Tier 2 review. It is not a probability.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1477,7 +1504,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Fine-tuning Pipeline</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        120-example dataset prepared and model comparison harness built and validated. System can serve a fine-tuned model via config the moment one exists — blocked on OpenAI platform access, not system readiness.</div>
+        Manual preparation splits the current internal-style records into training and validation examples. A separate harness can compare a candidate model; none is active by default.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1487,7 +1514,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Answer Verification</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Independent GPT-4o-mini judge verifies every answer against source tickets before delivery. Flags hallucinated claims.</div>
+        When enabled, an independent model checks support answers against retrieved tickets. Analytical tool answers bypass this check.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1496,7 +1523,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Adaptive Retry</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        On failed verification or low confidence, query is automatically broadened and the full pipeline reruns (up to 2 retries).</div>
+        When enabled, failed grounding or a low retrieval signal triggers a broader support-query search (up to 2 retries).</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1505,7 +1532,7 @@ with tab2:
         <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;height:140px">
         <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">ServiceNow Live</div>
         <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-        Real-time REST API connection to ServiceNow. Live incident counts and connection status checked on every query.</div>
+        Use the System tab button to check the optional connection; the analytical status tool can request live incident counts when configured.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1513,7 +1540,7 @@ with tab2:
     <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
     <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Resilience, Security &amp; Rate Limiting</div>
     <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-    Retry logic on transient API failures, graceful degradation to a safe escalated response on service outages, fail-closed PII masking, input validation, and per-session sliding-window rate limiting (blocks abuse before it can incur API cost) all keep the public demo stable and safe.</div>
+    Input validation, per-session rate limits, transient-error retries, and fail-closed text masking protect the request path. Degraded responses recommend human review.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1521,7 +1548,7 @@ with tab2:
     <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
     <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Multi-modal Input</div>
     <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-    Users can upload error screenshots alongside their question. GPT-4o-mini vision extracts the technical issue, which flows through the same RAG pipeline as typed questions — including PII masking, verification, and confidence scoring.</div>
+    When enabled, users can upload error screenshots alongside their question. Vision extracts the technical issue; the resulting text follows the support-answer path with text masking and optional verification.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1529,7 +1556,7 @@ with tab2:
     <div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;margin-top:1rem">
     <div style="font-weight:600;font-size:0.82rem;color:#0F172A;margin-bottom:0.3rem">Testing, CI/CD &amp; Evaluation Harness</div>
     <div style="font-size:0.75rem;color:#64748B;line-height:1.5">
-    A pytest suite of fast unit tests (zero API cost) runs automatically on every push via GitHub Actions, alongside integration tests for the live pipeline. Beyond pass/fail, an offline evaluation harness scores answers on five independent dimensions — groundedness, relevance, citation accuracy, refusal correctness, and latency — for structured before/after comparison across changes.</div>
+    GitHub Actions runs fast tests on pushes and pull requests to main; API-gated integration tests are separate. A manual evaluation harness records grounding, relevance, citation-ID validity, refusal behavior, and latency on a fixed question set.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1539,8 +1566,9 @@ with tab2:
     st.markdown("### Live Evaluation Metrics")
     st.markdown(
         "<p style='color:#64748B;font-size:0.85rem'>"
-        "Every production query is automatically scored in real time — "
-        "not just a fixed test set.</p>",
+        "When enabled, live evaluation records completed support-answer runs. "
+        "Analytical tool answers are not evaluated here. Grounded Rate uses "
+        "only checked runs; relevance is an LLM judge score, not answer accuracy.</p>",
         unsafe_allow_html=True,
     )
 
@@ -1550,16 +1578,16 @@ with tab2:
         with lc1:
             st.metric("Queries Scored", live_stats["total_scored"])
         with lc2:
-            st.metric("Grounded Rate", f"{live_stats['grounded_rate']:.0%}")
+            st.metric("Grounded Rate", format_grounded_rate(live_stats["grounded_rate"]))
         with lc3:
-            st.metric("Avg Relevance", f"{live_stats['avg_relevance']:.0%}")
+            st.metric("Avg Judge Relevance", f"{live_stats['avg_relevance']:.2f}/1")
         with lc4:
             st.metric("Avg Latency", f"{live_stats['avg_latency']:.1f}s")
     else:
         st.markdown(
             "<p style='color:#94A3B8;font-size:0.8rem'>"
-            "No queries scored yet. Ask a question in the Chat tab to see "
-            "live metrics appear here.</p>",
+            "No support answers scored yet. Live evaluation must be enabled "
+            "for metrics to appear here.</p>",
             unsafe_allow_html=True,
         )
 
@@ -1576,9 +1604,9 @@ with tab2:
         <div style="font-size:0.7rem;color:#94A3B8;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:0.75rem">
         AI & Orchestration</div>
         <div style="font-size:0.8rem;color:#374151;line-height:2">
-        GPT-4o-mini (OpenAI)<br>
+        GPT-4o-mini default (OpenAI)<br>
         LangChain + LangGraph<br>
-        LangSmith Tracing<br>
+        LangSmith Tracing (if configured)<br>
         text-embedding-3-small<br>
         Multi-agent StateGraph
         </div>
@@ -1589,7 +1617,7 @@ with tab2:
         Data & Storage</div>
         <div style="font-size:0.8rem;color:#374151;line-height:2">
         ChromaDB (vector store)<br>
-        Kaggle IT Dataset<br>
+        Kaggle Support Dataset<br>
         GitHub Issues API<br>
         JSONL audit logging
         </div>
@@ -1600,10 +1628,10 @@ with tab2:
         Security & Deployment</div>
         <div style="font-size:0.8rem;color:#374151;line-height:2">
         Microsoft Presidio (PII)<br>
-        Watchdog file monitor<br>
+        Watchdog file monitor (manual)<br>
         Streamlit frontend<br>
-        Python 3.14<br>
-        Railway / Streamlit Cloud
+        Python 3.12<br>
+        Railway deployment
         </div>
       </div>
 
@@ -1645,7 +1673,7 @@ with tab2:
         Chat model: <strong>{escape_html(str(_cfg['chat_model']))}</strong><br>
         Embedding model: <strong>{escape_html(str(_cfg['embedding_model']))}</strong><br>
         Retrieval k: <strong>{_cfg['retrieval_k']}</strong><br>
-        Confidence High / Medium: <strong>{_cfg['confidence_high']} / {_cfg['confidence_medium']}</strong><br>
+        Retrieval review cutoff (raw score): <strong>{_cfg['confidence_medium']}</strong><br>
         Max retries: <strong>{_cfg['max_retries']}</strong><br>
         Max question length: <strong>{_cfg['max_question_length']}</strong>
         </div>
@@ -1667,33 +1695,29 @@ with tab2:
 
     st.markdown("<div style='margin:1rem 0'></div>", unsafe_allow_html=True)
 
-    # Section 4c: Adaptive retry rate (derived from this session's messages) --------
+    # Section 4c: Adaptive retry rate for support answers in this session -----
     st.markdown("### Adaptive Retry")
-    _answered = [
-        m for m in st.session_state.get("messages", [])
-        if m.get("role") == "assistant" and "retry_count" in m
-    ]
-    if _answered:
-        _retried = sum(1 for m in _answered if (m.get("retry_count") or 0) > 0)
-        _retry_rate = int(round(100 * _retried / len(_answered)))
+    _retried, _support_count, _retry_rate = session_retry_summary(
+        st.session_state.get("messages", [])
+    )
+    if _support_count:
         rr_col1, rr_col2, rr_col3 = st.columns(3)
         with rr_col1:
             st.metric("Retry Rate", f"{_retry_rate}%")
         with rr_col2:
             st.metric("Broadened", _retried)
         with rr_col3:
-            st.metric("Queries", len(_answered))
+            st.metric("Support answers", _support_count)
         st.markdown(
             f"<p style='color:#94A3B8;font-size:0.78rem'>"
-            f"{_retry_rate}% of queries this session needed a broadened search — a "
-            "low first-pass confidence triggered an automatic query rewrite and "
-            "second retrieval attempt.</p>",
+            f"{_retry_rate}% of support answers this session needed a broadened search — "
+            "a grounding check or retrieval signal triggered another search pass.</p>",
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
             "<p style='color:#94A3B8;font-size:0.8rem'>"
-            "No queries yet this session — ask a question in the Chat tab to see the "
+            "No support answers yet this session — ask a support question in the Chat tab to see the "
             "adaptive-retry rate.</p>",
             unsafe_allow_html=True,
         )
@@ -1704,8 +1728,12 @@ with tab2:
     st.markdown("### Feedback Summary")
 
     if os.path.exists(FEEDBACK_FILE):
-        with open(FEEDBACK_FILE) as _fb_f:
-            _feedback_entries = [_json.loads(line) for line in _fb_f if line.strip()]
+        try:
+            with open(FEEDBACK_FILE) as _fb_f:
+                _feedback_entries = [_json.loads(line) for line in _fb_f if line.strip()]
+        except (OSError, _json.JSONDecodeError):
+            logger.warning("Feedback history is unavailable")
+            _feedback_entries = []
 
         if _feedback_entries:
             _positive = sum(1 for e in _feedback_entries if e.get("rating") == "positive")

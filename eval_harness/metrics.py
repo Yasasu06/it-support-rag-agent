@@ -3,12 +3,14 @@ Independent scoring dimensions for the evaluation harness.
 
 Each function scores ONE quality in isolation so a run reveals *where* the
 system is weak, not just an overall pass/fail. Two dimensions use an LLM judge
-(groundedness, relevance); three are pure logic (citation accuracy, refusal
+(groundedness, relevance); three are pure logic (citation-ID validity, refusal
 correctness, latency) and cost nothing.
 """
 
 import re
 from typing import Optional
+from security import sanitize_external_text
+from error_handling import safe_error_type
 
 
 def score_groundedness(
@@ -17,14 +19,16 @@ def score_groundedness(
     llm_getter
 ) -> dict:
     """
-    Scores whether every claim in the answer is
-    supported by the context. Returns a dict with
-    score (0-1) and reasoning.
+    Asks an LLM to rate how well the answer is
+    supported by the context. Returns a 0-1 judge
+    score and its response.
     This reuses the same pattern as the existing
     Verification Agent but as a standalone, reusable
     scoring function.
     """
     try:
+        answer = sanitize_external_text(answer)
+        context = sanitize_external_text(context)
         llm = llm_getter()
         prompt = (
             "Score how well-grounded this ANSWER is in "
@@ -42,13 +46,13 @@ def score_groundedness(
         return {
             "dimension": "groundedness",
             "score": max(0.0, min(score / 10.0, 1.0)),
-            "raw_response": response.content.strip()
+            "raw_response": sanitize_external_text(response.content.strip())
         }
     except Exception as e:
         return {
             "dimension": "groundedness",
             "score": 0.0,
-            "error": str(e)
+            "error": safe_error_type(e)
         }
 
 
@@ -58,13 +62,12 @@ def score_relevance(
     llm_getter
 ) -> dict:
     """
-    Scores whether the answer actually addresses the
-    question asked, independent of whether it's
-    grounded. An answer can be grounded but irrelevant
-    (answers a different question using real ticket
-    data) - this catches that failure mode separately.
+    Asks an LLM to rate whether the answer addresses the
+    question, separately from grounding.
     """
     try:
+        question = sanitize_external_text(question)
+        answer = sanitize_external_text(answer)
         llm = llm_getter()
         prompt = (
             "Score how well this ANSWER addresses the "
@@ -83,27 +86,24 @@ def score_relevance(
         return {
             "dimension": "relevance",
             "score": max(0.0, min(score / 10.0, 1.0)),
-            "raw_response": response.content.strip()
+            "raw_response": sanitize_external_text(response.content.strip())
         }
     except Exception as e:
         return {
             "dimension": "relevance",
             "score": 0.0,
-            "error": str(e)
+            "error": safe_error_type(e)
         }
 
 
-def score_citation_accuracy(
+def score_citation_id_validity(
     answer: str,
     source_ticket_ids: list
 ) -> dict:
     """
-    Pure logic check (no LLM call, instant, free):
-    extracts every Ticket ID mentioned in the answer
-    text and verifies each one actually appears in the
-    list of tickets that were retrieved. This catches
-    the exact bug we found and fixed earlier in this
-    project - citing a ticket ID not in the source list.
+    Pure logic check (no LLM call): extract recognizable Ticket IDs from the
+    answer and compare them with retrieved source IDs. A valid ID match does
+    not establish that the cited source supports the surrounding claim.
     """
     cited_ids = re.findall(
         r'\b(?:TKT|KGL|GH|HF|SNOW)-[\w\-]+\b',
@@ -112,7 +112,7 @@ def score_citation_accuracy(
 
     if not cited_ids:
         return {
-            "dimension": "citation_accuracy",
+            "dimension": "citation_id_validity",
             "score": None,
             "note": "No ticket IDs cited in answer"
         }
@@ -121,11 +121,11 @@ def score_citation_accuracy(
         1 for cid in cited_ids
         if cid in source_ticket_ids
     )
-    accuracy = valid_citations / len(cited_ids)
+    validity = valid_citations / len(cited_ids)
 
     return {
-        "dimension": "citation_accuracy",
-        "score": accuracy,
+        "dimension": "citation_id_validity",
+        "score": validity,
         "cited_ids": cited_ids,
         "source_ids": source_ticket_ids,
         "invalid_citations": [

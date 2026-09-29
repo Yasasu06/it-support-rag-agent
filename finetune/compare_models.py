@@ -1,11 +1,11 @@
 """
 Model comparison harness — closes the fine-tuning loop.
 
-Runs the full 20-question eval set through TWO models (a base model and an
-optional fine-tuned model ID) using the exact same eval-harness metrics
-(groundedness, relevance, citation accuracy, refusal correctness, latency), so
-a fine-tuned model can be judged the moment one exists. With no --finetuned
-arg it scores only the base model, producing a fresh current baseline.
+Runs the fixed 20-question eval set through TWO models (a base model and an
+optional candidate model ID) using the same eval-harness metrics
+(groundedness, relevance, citation-ID validity, refusal correctness, latency).
+With no --finetuned argument it scores only the base model, producing a fresh
+current baseline.
 
 Usage:
     python3 finetune/compare_models.py
@@ -16,6 +16,9 @@ import sys
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 sys.path.insert(0,
     os.path.dirname(os.path.dirname(__file__)))
@@ -23,11 +26,17 @@ sys.path.insert(0,
 from eval_harness.metrics import (
     score_groundedness,
     score_relevance,
-    score_citation_accuracy,
+    score_citation_id_validity,
     score_refusal_correctness,
     score_latency
 )
 from eval import TEST_CASES
+from config import config
+from index_contract import (
+    COLLECTION_NAME, l2_relevance_score, validate_collection,
+    validate_embedding_model,
+)
+from security import sanitize_external_text
 
 
 def run_pipeline_with_model(
@@ -35,7 +44,7 @@ def run_pipeline_with_model(
     model_name: str
 ) -> dict:
     """
-    Runs a single question through the RAG pipeline
+    Runs a single question through a standalone RAG comparison path
     using a SPECIFIC model override (not the config
     default), so we can compare models side by side
     without affecting production config.
@@ -44,46 +53,40 @@ def run_pipeline_with_model(
     from langchain_openai import ChatOpenAI
     from langchain_chroma import Chroma
     from langchain_openai import OpenAIEmbeddings
-    from dotenv import load_dotenv
-    load_dotenv()
 
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small"
-    )
+    validate_embedding_model(config.EMBEDDING_MODEL)
+    embeddings = OpenAIEmbeddings(model=config.EMBEDDING_MODEL)
     db = Chroma(
-        collection_name="it_support_tickets",
+        collection_name=COLLECTION_NAME,
         embedding_function=embeddings,
-        persist_directory=os.path.join(
-            os.path.dirname(
-                os.path.dirname(__file__)
-            ), "chroma_db"
-        )
+        persist_directory=config.CHROMA_DB_PATH,
+        relevance_score_fn=l2_relevance_score,
+        create_collection_if_not_exists=False,
     )
+    validate_collection(db._collection, config.EMBEDDING_MODEL)
 
+    question = sanitize_external_text(question)
     start = time.time()
     results = db.similarity_search(question, k=3)
-    context = "\n\n".join([
+    context = sanitize_external_text("\n\n".join([
         r.page_content for r in results
-    ])
+    ]))
     source_ids = [
-        r.metadata.get("ticket_id", "")
+        sanitize_external_text(str(r.metadata.get("ticket_id", "")))
         for r in results
     ]
 
-    # Reuse the EXACT production answer prompt (agent_pipeline.answer_prompt),
-    # which carries the "definition of sufficient context" guidance. Using a
-    # barer prompt here makes the base model over-refuse and produces a baseline
-    # that does not reflect the real system — defeating the purpose of a
-    # model-vs-model comparison. Only the model swaps; the prompt/retrieval stay
-    # identical to production so the delta is attributable to the model alone.
+    # Reuse the answer prompt from agent_pipeline for a useful comparison.
+    # This standalone path does not run the full graph, verification, or retry;
+    # its scores are not a direct measure of deployed end-to-end behavior.
     from agent_pipeline import answer_prompt
     from langchain_core.output_parsers import StrOutputParser
 
     llm = ChatOpenAI(model=model_name, temperature=0)
     chain = answer_prompt | llm | StrOutputParser()
-    answer_text = chain.invoke(
+    answer_text = sanitize_external_text(chain.invoke(
         {"context": context, "question": question}
-    )
+    ))
     latency = time.time() - start
 
     return {
@@ -118,7 +121,7 @@ def run_comparison(
         results = []
 
         for case in TEST_CASES:
-            question = case["question"]
+            question = sanitize_external_text(case["question"])
             expected = case["should_answer"]
 
             pipeline_result = run_pipeline_with_model(
@@ -138,8 +141,8 @@ def run_comparison(
                 "relevance": score_relevance(
                     question, answer, _get_chat_llm
                 ),
-                "citation_accuracy":
-                    score_citation_accuracy(
+                "citation_id_validity":
+                    score_citation_id_validity(
                         answer, source_ids
                     ),
                 "refusal_correctness":
@@ -162,7 +165,7 @@ def run_comparison(
 
     for label, results in all_results.items():
         dims = ["groundedness", "relevance",
-                "citation_accuracy",
+                "citation_id_validity",
                 "refusal_correctness", "latency"]
         summary = {}
         for dim in dims:

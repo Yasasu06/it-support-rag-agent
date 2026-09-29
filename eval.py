@@ -3,7 +3,7 @@ Evaluation script for the IT Support RAG Agent.
 
 Runs a fixed set of 20 test questions against rag.get_answer, checks
 whether the agent answered or refused, compares that against the
-expected behavior for each question, and reports accuracy metrics.
+expected behavior for each question, and reports a behavioral pass rate.
 
 Run with:
     python3 eval.py
@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from rag import get_answer
+from security import sanitize_external_text
 
 REFUSAL_MARKERS = ["don't have information", "enterprise knowledge base"]
 
@@ -129,18 +130,19 @@ def is_refusal(answer: str) -> bool:
     return any(marker in lowered for marker in REFUSAL_MARKERS)
 
 
-def grade_for(accuracy: float) -> str:
-    if accuracy >= 90:
-        return "Production Ready"
-    if accuracy >= 70:
-        return "Good — minor improvements needed"
-    return "Needs improvement"
+def behavior_summary_for(match_rate: float) -> str:
+    if match_rate >= 90:
+        return "At least 90% matched on this test set"
+    if match_rate >= 70:
+        return "70–89% matched on this test set"
+    return "Below 70% matched on this test set"
 
 
 def run_eval() -> dict:
     results = []
     for case in TEST_CASES:
-        answer = get_answer(case["question"])
+        safe_question = sanitize_external_text(case["question"])
+        answer = sanitize_external_text(get_answer(safe_question))
         refused = is_refusal(answer)
         actually_answered = not refused
 
@@ -153,7 +155,7 @@ def run_eval() -> dict:
 
         results.append(
             {
-                "question": case["question"],
+                "question": safe_question,
                 "expected_category": case["expected_category"],
                 "should_answer": case["should_answer"],
                 "answer": answer,
@@ -166,26 +168,26 @@ def run_eval() -> dict:
     total = len(results)
     passed_count = sum(1 for r in results if r["passed"])
     failed_count = total - passed_count
-    accuracy = round((passed_count / total) * 100, 1) if total else 0.0
+    behavior_match_rate = round((passed_count / total) * 100, 1) if total else 0.0
 
     in_scope = [r for r in results if r["should_answer"]]
     out_of_scope = [r for r in results if not r["should_answer"]]
-    in_scope_correct = sum(1 for r in in_scope if r["passed"])
-    out_of_scope_correct = sum(1 for r in out_of_scope if r["passed"])
+    in_scope_answered_as_expected = sum(1 for r in in_scope if r["passed"])
+    out_of_scope_refused_as_expected = sum(1 for r in out_of_scope if r["passed"])
 
-    grade = grade_for(accuracy)
+    behavior_summary = behavior_summary_for(behavior_match_rate)
 
     return {
         "timestamp": datetime.now().isoformat(),
         "total_questions": total,
         "passed": passed_count,
         "failed": failed_count,
-        "accuracy": accuracy,
-        "in_scope_correct": in_scope_correct,
+        "behavior_match_rate": behavior_match_rate,
+        "in_scope_answered_as_expected": in_scope_answered_as_expected,
         "in_scope_total": len(in_scope),
-        "out_of_scope_correct": out_of_scope_correct,
+        "out_of_scope_refused_as_expected": out_of_scope_refused_as_expected,
         "out_of_scope_total": len(out_of_scope),
-        "grade": grade,
+        "behavior_summary": behavior_summary,
         "results": results,
     }
 
@@ -208,16 +210,16 @@ def print_report(summary: dict) -> None:
     print(f"Total questions: {summary['total_questions']}")
     print(f"Passed: {summary['passed']}")
     print(f"Failed: {summary['failed']}")
-    print(f"Accuracy: {summary['accuracy']}%")
+    print(f"Expected answer/refusal behavior: {summary['behavior_match_rate']}%")
     print(
-        f"In-scope questions answered correctly: "
-        f"{summary['in_scope_correct']}/{summary['in_scope_total']}"
+        f"In-scope questions answered as expected: "
+        f"{summary['in_scope_answered_as_expected']}/{summary['in_scope_total']}"
     )
     print(
-        f"Out-of-scope questions refused correctly: "
-        f"{summary['out_of_scope_correct']}/{summary['out_of_scope_total']}"
+        f"Out-of-scope questions refused as expected: "
+        f"{summary['out_of_scope_refused_as_expected']}/{summary['out_of_scope_total']}"
     )
-    print(f"Overall grade: {summary['grade']}")
+    print(f"Benchmark summary: {summary['behavior_summary']}")
     print("=" * 70)
 
 

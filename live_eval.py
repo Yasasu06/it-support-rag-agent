@@ -1,8 +1,9 @@
 """
-Real-time continuous evaluation for the IT Support RAG Agent.
+Optional evaluation for completed support-answer graph runs.
 
-Scores every production query automatically as it flows through the pipeline.
-Writes one JSONL entry per query to live_eval_log.jsonl.
+When enabled, scores relevance and records available grounding, retrieval,
+and latency signals in a local JSONL file. Analytical and degraded responses
+do not enter this path.
 Exposes get_live_eval_summary() for the System tab in app.py.
 """
 
@@ -10,6 +11,7 @@ import json
 import os
 from datetime import datetime
 from typing import Optional
+from security import sanitize_external_text
 
 LIVE_EVAL_LOG = os.path.join(
     os.path.dirname(__file__),
@@ -23,11 +25,13 @@ def score_response_relevance(
     llm_getter,
 ) -> float:
     """
-    Uses GPT-4o-mini to score how relevant the answer is to the question
+    Uses the supplied judge model to score answer relevance to the question
     on a 0-1 scale. Fail-safe: returns 0.0 on any error so a scoring
     failure never silently counts as a pass.
     """
     try:
+        question = sanitize_external_text(question)
+        answer = sanitize_external_text(answer)
         llm = llm_getter()
         prompt = (
             "Rate how well this ANSWER addresses "
@@ -58,13 +62,13 @@ def log_live_eval(
     tier: str,
     latency_seconds: float,
 ) -> None:
-    """Appends one scored evaluation entry per production query to live_eval_log.jsonl."""
+    """Append one optional support-run entry to live_eval_log.jsonl."""
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         "question_length": len(question),
         "answer_length": len(answer),
         "grounded": grounded,
-        "verification_notes": verification_notes,
+        "verification_notes": sanitize_external_text(verification_notes or ""),
         "confidence_score": round(confidence_score, 3) if confidence_score else None,
         "relevance_score": round(relevance_score, 3),
         "escalation": escalation,
@@ -87,7 +91,7 @@ def get_live_eval_summary() -> dict:
     default = {
         "total_scored": 0,
         "avg_relevance": 0.0,
-        "grounded_rate": 0.0,
+        "grounded_rate": None,
         "quality_pass_rate": 0.0,
         "avg_latency": 0.0,
     }
@@ -110,14 +114,15 @@ def get_live_eval_summary() -> dict:
 
     total = len(entries)
     avg_relevance = sum(e.get("relevance_score", 0) for e in entries) / total
-    grounded_count = sum(1 for e in entries if e.get("grounded") is True)
+    checked = [e for e in entries if isinstance(e.get("grounded"), bool)]
+    grounded_count = sum(1 for e in checked if e["grounded"] is True)
     quality_pass_count = sum(1 for e in entries if e.get("passed_quality_bar") is True)
     avg_latency = sum(e.get("latency_seconds", 0) for e in entries) / total
 
     return {
         "total_scored": total,
         "avg_relevance": round(avg_relevance, 3),
-        "grounded_rate": round(grounded_count / total, 3),
+        "grounded_rate": round(grounded_count / len(checked), 3) if checked else None,
         "quality_pass_rate": round(quality_pass_count / total, 3),
         "avg_latency": round(avg_latency, 2),
     }

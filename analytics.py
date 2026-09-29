@@ -1,10 +1,9 @@
 """
-Private, privacy-preserving visit analytics for the IT Support RAG Agent.
+Private per-session visit analytics for the IT Support RAG Agent.
 
-Logs only a UTC timestamp and a random per-session id — no IP, name, email, or
-any personally identifying information. The session id is an anonymous UUID
-generated per browser session, not tied to any real identity. Failures never
-break the app.
+Logs a UTC timestamp and a random per-session UUID. This code does not collect
+an IP address, name, or email, but the UUID links events within a session.
+Failures never break the app.
 """
 
 import json
@@ -18,11 +17,8 @@ ANALYTICS_LOG = os.path.join(
 
 def log_visit(session_id: str) -> None:
     """
-    Logs a single visit with timestamp only - no IP,
-    no name, no email, no personally identifying
-    information. session_id is a random anonymous
-    identifier generated per browser session, not tied
-    to any real identity.
+    Log one visit with a timestamp and random session ID.
+    No IP, name, or email field is collected by this function.
     """
     entry = {
         "timestamp": datetime.now(
