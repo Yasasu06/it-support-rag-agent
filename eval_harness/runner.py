@@ -19,7 +19,7 @@ sys.path.insert(0,
 from eval_harness.metrics import (
     score_groundedness,
     score_relevance,
-    score_citation_accuracy,
+    score_citation_id_validity,
     score_refusal_correctness,
     score_latency
 )
@@ -27,6 +27,7 @@ from eval_harness.metrics import (
 # Reuse the existing 20-question test set - do not
 # duplicate it, import it
 from eval import TEST_CASES
+from security import sanitize_external_text
 
 
 def run_full_harness() -> dict:
@@ -41,14 +42,14 @@ def run_full_harness() -> dict:
     results = []
 
     for case in TEST_CASES:
-        question = case["question"]
+        question = sanitize_external_text(case["question"])
         expected_should_answer = case["should_answer"]
 
         start = time.time()
         pipeline_result = run_agent_pipeline(question)
         latency = time.time() - start
 
-        answer = pipeline_result.get("answer", "")
+        answer = sanitize_external_text(pipeline_result.get("answer", ""))
         # NOTE: run_agent_pipeline exposes retrieved tickets under the key
         # "sources" in its return dict (it renames the internal
         # "retrieved_sources" state field). Confirmed against
@@ -57,12 +58,12 @@ def run_full_harness() -> dict:
             "sources", []
         )
         source_ids = [
-            s.get("ticket_id", "") for s in sources
+            sanitize_external_text(str(s.get("ticket_id", ""))) for s in sources
         ] if sources else []
-        context = " ".join([
+        context = sanitize_external_text(" ".join([
             f"{s.get('issue', '')} {s.get('resolution', '')}"
             for s in sources
-        ]) if sources else ""
+        ])) if sources else ""
 
         scores = {
             "question": question,
@@ -77,7 +78,7 @@ def run_full_harness() -> dict:
             "relevance": score_relevance(
                 question, answer, _get_chat_llm
             ),
-            "citation_accuracy": score_citation_accuracy(
+            "citation_id_validity": score_citation_id_validity(
                 answer, source_ids
             ),
             "refusal_correctness":
@@ -116,7 +117,7 @@ def _compute_summary(results: list) -> dict:
     retrieved') gracefully."""
     dimensions = [
         "groundedness", "relevance",
-        "citation_accuracy", "refusal_correctness",
+        "citation_id_validity", "refusal_correctness",
         "latency"
     ]
 

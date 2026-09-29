@@ -28,3 +28,7 @@ finetune/model_comparison_results.json
 
 # Private analytics log (visit timestamps + anonymous session ids)
 visit_log.jsonl
+
+# Runtime ticket drops and sanitized processed copies; tracked samples remain.
+new_tickets/*.json
+new_tickets/processed/*.json

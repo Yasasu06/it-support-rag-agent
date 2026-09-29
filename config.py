@@ -1,14 +1,25 @@
 """
 Centralized configuration for the IT Support RAG Agent.
 
-Single source of truth for deployment-tunable values. Every setting defaults to
-EXACTLY what the system used before this module existed, so importing config
-changes nothing unless an environment variable is explicitly set. This lets a
-deployment tune models, thresholds, retry behavior, and feature flags without
-touching code.
+Single source of truth for deployment-tunable values. Defaults select the
+documented models, tracked index, and feature flags. Environment variables
+can adjust models, thresholds, retry behavior, and optional features.
 """
 
 import os
+from pathlib import Path
+from index_contract import INDEX_EMBEDDING_MODEL
+
+
+PROJECT_DIR = Path(__file__).resolve().parent
+
+
+def resolve_chroma_path(value: str | None = None) -> str:
+    """Resolve relative index paths from the repository, regardless of cwd."""
+    configured = value if value is not None else os.getenv("CHROMA_DB_PATH", "chroma_db")
+    if not configured.strip():
+        raise ValueError("CHROMA_DB_PATH must not be empty")
+    return str((PROJECT_DIR / Path(configured).expanduser()).resolve())
 
 
 def _get_env_str(key: str, default: str) -> str:
@@ -37,18 +48,20 @@ def _get_env_bool(key: str, default: bool) -> bool:
 
 
 class Config:
+    CHROMA_DB_PATH = resolve_chroma_path()
+
     # Model selection
     CHAT_MODEL = _get_env_str(
         "CHAT_MODEL", "gpt-4o-mini"
     )
     EMBEDDING_MODEL = _get_env_str(
-        "EMBEDDING_MODEL", "text-embedding-3-small"
+        "EMBEDDING_MODEL", INDEX_EMBEDDING_MODEL
     )
 
     # Fine-tuned model wiring — unused until a model exists. When
     # USE_FINETUNED_MODEL is true AND FINETUNED_MODEL_ID is set, the pipeline
     # serves that model instead of CHAT_MODEL. Defaults keep the base model, so
-    # production is unchanged until both env vars are flipped (no code change).
+    # the default serving model remains selected until both env vars are set.
     FINETUNED_MODEL_ID = _get_env_str(
         "FINETUNED_MODEL_ID", ""
     )
@@ -59,9 +72,9 @@ class Config:
     # Retrieval
     RETRIEVAL_K = _get_env_int("RETRIEVAL_K", 3)
 
-    # Confidence thresholds (must match existing
-    # calibrated values exactly - verify against
-    # confidence_from_score in app.py before finalizing)
+    # Retrieval review uses the raw 0.20 relevance-score cutoff. The 0.60
+    # legacy display setting remains configurable but is not used by chat.
+    # Neither value is a calibrated probability.
     CONFIDENCE_HIGH_THRESHOLD = _get_env_float(
         "CONFIDENCE_HIGH_THRESHOLD", 0.60
     )
@@ -127,7 +140,8 @@ class Config:
         explicitly enabled AND an ID is present, otherwise the base CHAT_MODEL.
         Reads env live so the switch can be flipped without a code change; the
         default path (USE_FINETUNED_MODEL unset/false, or no ID) returns
-        CHAT_MODEL exactly as before, so production behavior is unchanged.
+        CHAT_MODEL. This configuration alone does not indicate that a
+        fine-tuned model exists or has been evaluated.
         """
         use_ft = _get_env_bool(
             "USE_FINETUNED_MODEL", cls.USE_FINETUNED_MODEL

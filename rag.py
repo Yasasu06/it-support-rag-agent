@@ -27,7 +27,12 @@ from langsmith.wrappers import wrap_openai
 
 import logging
 
-from error_handling import with_retry, ServiceUnavailableError
+from error_handling import with_retry, ServiceUnavailableError, safe_error_type
+from security import sanitize_external_text, sanitize_trace_payload
+from index_contract import (
+    COLLECTION_NAME, l2_relevance_score, validate_collection,
+    validate_embedding_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +54,7 @@ from config import config
 # Configuration -------------------------------------------------------------
 # Values are sourced from the centralized config (env-overridable), defaulting
 # to exactly the previous hardcoded values so default behavior is unchanged.
-CHROMA_DIR = os.getenv("CHROMA_DB_PATH", "chroma_db")
-COLLECTION_NAME = "it_support_tickets"
+CHROMA_DIR = config.CHROMA_DB_PATH
 EMBEDDING_MODEL = config.EMBEDDING_MODEL
 # active_chat_model() returns the fine-tuned model when enabled+set, else the
 # base CHAT_MODEL (default). Default behavior is unchanged.
@@ -81,6 +85,7 @@ _rag_chain = None
 def _get_embeddings() -> OpenAIEmbeddings:
     global _embeddings
     if _embeddings is None:
+        validate_embedding_model(EMBEDDING_MODEL)
         _embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
     return _embeddings
 
@@ -92,7 +97,10 @@ def _get_vectorstore() -> Chroma:
             collection_name=COLLECTION_NAME,
             embedding_function=_get_embeddings(),
             persist_directory=CHROMA_DIR,
+            relevance_score_fn=l2_relevance_score,
+            create_collection_if_not_exists=False,
         )
+        validate_collection(_vectorstore._collection, EMBEDDING_MODEL)
     return _vectorstore
 
 
@@ -135,7 +143,7 @@ def _get_llm() -> ChatOpenAI:
 
 def format_docs(docs) -> str:
     """Join retrieved ticket documents into a single context string."""
-    return "\n\n".join(doc.page_content for doc in docs)
+    return sanitize_external_text("\n\n".join(doc.page_content for doc in docs))
 
 
 def _get_rag_chain():
@@ -155,8 +163,23 @@ def _get_rag_chain():
 
 
 # Step 5: query reformulation -----------------------------------------------
-@traceable(name="Query Reformulation")
 def reformulate_query(raw_question: str) -> str:
+    """Sanitize before invoking or tracing the external reformulation model."""
+    safe_question = sanitize_external_text(raw_question)
+    return sanitize_external_text(_reformulate_query_safe(safe_question))
+
+
+# Explicit parent runs receive sanitized inputs and redact their outputs.
+# Tracing is conditional on external LangSmith configuration. Nested
+# LangChain/LangGraph model or tool runs may capture generated or retrieved
+# content before parent post-processing, and traced exception/error fields
+# may contain sensitive diagnostics. These hooks do not redact every trace.
+@traceable(
+    name="Query Reformulation",
+    process_inputs=sanitize_trace_payload,
+    process_outputs=sanitize_trace_payload,
+)
+def _reformulate_query_safe(raw_question: str) -> str:
     """
     Takes a vague or messy user question and
     rewrites it into a clean, specific IT support
@@ -223,14 +246,22 @@ def _invoke_rag_chain(question: str) -> str:
     return _get_rag_chain().invoke(question)
 
 
-@traceable(name="IT Support RAG Query")
 def get_answer(question: str) -> str:
     """Return a grounded, citation-backed answer for the given question."""
+    return _get_answer_safe(sanitize_external_text(question))
+
+
+@traceable(
+    name="IT Support RAG Query",
+    process_inputs=sanitize_trace_payload,
+    process_outputs=sanitize_trace_payload,
+)
+def _get_answer_safe(question: str) -> str:
     question = reformulate_query(question)
     try:
-        return _invoke_rag_chain(question)
+        return sanitize_external_text(_invoke_rag_chain(question))
     except ServiceUnavailableError as e:
-        logger.error(f"get_answer failed after retries: {e}")
+        logger.error("get_answer failed after retries: %s", safe_error_type(e))
         return SERVICE_UNAVAILABLE_MESSAGE
 
 
@@ -242,6 +273,7 @@ def get_answer_with_memory(
     Answers a question with conversation context.
     Remembers last 5 exchanges per session.
     """
+    question = sanitize_external_text(question)
     history = _conversation_memory.load_memory_variables({})
     chat_history = history.get("chat_history", [])
 
@@ -253,7 +285,7 @@ def get_answer_with_memory(
                 msg, 'type') and msg.type == 'human' \
                 else "Assistant"
             history_text += (
-                f"{role}: {msg.content[:200]}\n"
+                f"{role}: {sanitize_external_text(msg.content[:200])}\n"
             )
 
     # Reformulate the question and history TOGETHER, in one pass, so the
@@ -270,9 +302,9 @@ def get_answer_with_memory(
     augmented_question = reformulate_query(augmented_question)
 
     try:
-        answer = _invoke_rag_chain(augmented_question)
+        answer = sanitize_external_text(_invoke_rag_chain(augmented_question))
     except ServiceUnavailableError as e:
-        logger.error(f"get_answer_with_memory failed after retries: {e}")
+        logger.error("get_answer_with_memory failed after retries: %s", safe_error_type(e))
         return SERVICE_UNAVAILABLE_MESSAGE
 
     _conversation_memory.save_context(
@@ -295,6 +327,7 @@ def get_answer_streaming(question: str) -> Generator[str, None, None]:
     so streamed answers stay consistent with the non-streaming path.
     """
     try:
+        question = sanitize_external_text(question)
         reformulated = reformulate_query(question)
 
         docs = _get_vectorstore().similarity_search(reformulated, k=TOP_K)
@@ -323,7 +356,7 @@ def get_answer_streaming(question: str) -> Generator[str, None, None]:
     except Exception as e:
         # Streaming can't be safely retried mid-flight (tokens already sent),
         # so degrade to a clear message instead of crashing the UI.
-        logger.error(f"get_answer_streaming failed: {e}")
+        logger.error("get_answer_streaming failed: %s", safe_error_type(e))
         yield SERVICE_UNAVAILABLE_MESSAGE
 
 

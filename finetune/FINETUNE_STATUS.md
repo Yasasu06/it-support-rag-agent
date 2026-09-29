@@ -1,51 +1,31 @@
 # Fine-Tuning Status
 
-## What is built
+## Available workflow
 
-- **`prepare_dataset.py`** — converts the 150-ticket dataset into OpenAI
-  fine-tuning JSONL, split 80/20 into `training_data.jsonl` (120 examples) and
-  `validation_data.jsonl` (30 examples). Each example pairs a reported issue
-  with a cited, resolution-grounded assistant answer.
-- **`run_finetune.py`** — uploads the train/validation files and starts an
-  OpenAI fine-tuning job (base `gpt-4o-mini-2024-07-18`, suffix
-  `it-support-rag`, 3 epochs), then polls job status and records the resulting
-  model ID.
+- **`prepare_dataset.py`** manually converts the internal-style support records
+  into sanitized OpenAI JSONL examples. The current 152-record source yields
+  121 training and 31 validation examples with its 80/20 split. Older local
+  generated files may have different counts; the JSONL outputs are not tracked.
+- **`run_finetune.py`** validates every JSONL record before an optional upload,
+  then can submit and poll an OpenAI fine-tuning job when deliberately run with
+  the required account access and credentials.
+- **`compare_models.py`** can score a base model and a supplied candidate model
+  on the fixed 20-question set. It uses the configured Chroma collection, the
+  answer prompt, and the evaluation metrics for grounding, relevance,
+  citation-ID validity, refusal behavior, and latency. This is a separate RAG
+  comparison path, not the full deployed LangGraph workflow; its results do not
+  isolate every possible runtime difference to model choice.
 
-## Why it is not deployed
+## Current deployment status
 
-Self-serve fine-tuning for the relevant model tier has not been available on the
-account (OpenAI paused/gated self-serve access). The dataset and job scripts are
-complete and validated; the blocker is **platform access, not system
-readiness**.
+The repository contains no submitted fine-tuning job record or active
+fine-tuned model ID. The default application uses `CHAT_MODEL`. Configuration
+can select a candidate model when both `USE_FINETUNED_MODEL=true` and
+`FINETUNED_MODEL_ID` are set, but that path should be evaluated before use.
+Current account eligibility or platform access cannot be established from this
+repository.
 
-## Loop Closure (Comparison Infrastructure)
-
-While OpenAI's self-serve fine-tuning remains unavailable, the comparison and
-deployment infrastructure is fully built and tested:
-
-- **`finetune/compare_models.py`** — runs the full 20-question eval harness
-  against any two models side by side, scoring groundedness, relevance,
-  citation accuracy, refusal correctness, and latency independently. It reuses
-  the **exact production answer prompt and retrieval** (only the model is
-  swapped), so any measured delta is attributable to the model alone and the
-  numbers are directly comparable to the production eval harness.
-- **Current baseline (base model `gpt-4o-mini`, 2026-08-09):**
-
-  | Dimension | Score |
-  |-----------|-------|
-  | groundedness | 0.720 |
-  | relevance | 0.685 |
-  | citation accuracy | 1.000 |
-  | refusal correctness | 1.000 |
-  | latency | 1.000 |
-
-- **Production is ready to serve a fine-tuned model via two environment
-  variables** — `USE_FINETUNED_MODEL=true` and `FINETUNED_MODEL_ID=<id>` — with
-  zero code changes required. `config.active_chat_model()` selects the
-  fine-tuned model when both are set, and falls back to the base model
-  otherwise.
-- **Workflow when access is restored** (OpenAI RFT, or a different provider):
-  train → get model ID → run
-  `python3 finetune/compare_models.py --finetuned <id>` → review the side-by-side
-  comparison → set the two env vars **only if** the fine-tuned model wins on the
-  metrics that matter. The comparison is the gate; the swap is a config flip.
+To explore this extension, prepare the dataset, submit a job only when access
+is available, compare the resulting model with the base model, and review the
+results before changing serving configuration. The comparison harness is an
+evaluation aid, not evidence that a fine-tuned model has been deployed.

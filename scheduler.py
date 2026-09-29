@@ -1,8 +1,8 @@
 """
-Nightly knowledge base refresh scheduler for the IT Support RAG Agent.
+Optional knowledge base refresh scheduler for the IT Support RAG Agent.
 
-Runs ingest_all.py automatically every night at 02:00 UTC and logs each
-run's outcome to scheduler_log.jsonl.
+When started manually, runs ingest_all.py at 02:00 in the host's local time
+and logs each run's outcome to scheduler_log.jsonl.
 
 Run directly to start the scheduler loop:
     python3 scheduler.py
@@ -13,8 +13,10 @@ import time
 import subprocess
 import logging
 import os
+import sys
 from datetime import datetime
 from dotenv import load_dotenv
+from error_handling import safe_error_type
 
 load_dotenv()
 
@@ -26,9 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 PROJECT_DIR = os.path.dirname(__file__)
-PYTHON = os.path.join(
-    PROJECT_DIR, "venv", "bin", "python3"
-)
+PYTHON = sys.executable
 INGEST_SCRIPT = os.path.join(
     PROJECT_DIR, "ingest_all.py"
 )
@@ -61,9 +61,7 @@ def run_ingestion():
             "timestamp": start_time.isoformat(),
             "success": success,
             "duration_seconds": duration,
-            "stdout_tail": result.stdout[-500:],
-            "stderr_tail": result.stderr[-200:]
-                if result.stderr else ""
+            "exit_code": result.returncode,
         }
 
         import json
@@ -75,14 +73,12 @@ def run_ingestion():
                 f"Refresh complete in {duration}s"
             )
         else:
-            logger.error(
-                f"Refresh failed: {result.stderr[-200:]}"
-            )
+            logger.error("Refresh failed with exit code %s", result.returncode)
 
     except subprocess.TimeoutExpired:
         logger.error("Ingestion timed out after 1 hour")
     except Exception as e:
-        logger.error(f"Scheduler error: {e}")
+        logger.error("Scheduler error: %s", safe_error_type(e))
 
 
 schedule.every().day.at("02:00").do(run_ingestion)
@@ -91,7 +87,7 @@ schedule.every().day.at("02:00").do(run_ingestion)
 def run_scheduler():
     logger.info(
         "Scheduler started. "
-        "Knowledge base refresh scheduled at 02:00 UTC"
+        "Knowledge base refresh scheduled at 02:00 host local time"
     )
     logger.info(
         f"Next run: "

@@ -3,12 +3,12 @@
   "total_questions": 20,
   "passed": 18,
   "failed": 2,
-  "accuracy": 90.0,
-  "in_scope_correct": 14,
+  "behavior_match_rate": 90.0,
+  "in_scope_answered_as_expected": 14,
   "in_scope_total": 16,
-  "out_of_scope_correct": 4,
+  "out_of_scope_refused_as_expected": 4,
   "out_of_scope_total": 4,
-  "grade": "Production Ready",
+  "behavior_summary": "At least 90% matched on this test set",
   "results": [
     {
       "question": "My printer is not printing anything",

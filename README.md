@@ -2,13 +2,13 @@
 
 ![Tests](https://github.com/Yasasu06/it-support-rag-agent/actions/workflows/tests.yml/badge.svg)
 
-A production-grade AI system that answers enterprise IT support questions by retrieving and citing real historical incidents — built with Retrieval-Augmented Generation (RAG), a four-agent LangGraph pipeline with adaptive retry, and a knowledge base assembled from multiple real-world and synthetic data sources plus a live ServiceNow API connection.
+A RAG assistant for IT support questions, built with a LangGraph support workflow and a separate analytical tool path. Its tracked 750-record index combines transformed public GitHub issues, fictional internal-style support records, synthetic ServiceNow-format incidents, and a small public support dataset. An optional, read-only ServiceNow connector can retrieve live incident information when configured.
 
 Built to demonstrate Forward Deployed Engineer and Solutions Engineer capabilities for enterprise AI deployment.
 
 ---
 
-## Live Demo
+## Hosted Demo
 
 **[it-support-rag-agent-production.up.railway.app](https://it-support-rag-agent-production.up.railway.app/)**
 
@@ -22,11 +22,11 @@ Enterprise IT support teams spend significant time manually searching through kn
 
 ## The Solution
 
-An AI assistant grounded exclusively in enterprise IT incident data that:
-- Retrieves the 3 most relevant past incidents using semantic similarity search
-- Generates cited, grounded answers using only retrieved incident context
-- Refuses out-of-scope questions rather than hallucinating
-- Routes low-confidence queries to Tier 2 escalation automatically
+An IT support assistant that:
+- Retrieves up to three relevant records from the tracked knowledge base
+- Generates answers from retrieved context and cites source ticket IDs
+- Returns a no-evidence response when retrieval finds no support; it can decline out-of-scope questions
+- Recommends Tier 2 review when retrieval or grounding warrants it
 
 ---
 
@@ -34,74 +34,70 @@ An AI assistant grounded exclusively in enterprise IT incident data that:
 
 ### Multi-Agent Pipeline (LangGraph)
 
-Every query flows through a four-agent StateGraph:
+Support-answer queries use LangGraph with retrieval, answer, and triage nodes;
+the verification node is added when enabled:
 
-1. **Retrieval Agent** — semantic search across ChromaDB vector store, returns top 3 matching incidents with similarity scores; broadens the query on a retry
-2. **Answer Agent** — GPT-4o-mini generates a grounded response using only retrieved context, cites Ticket IDs
-3. **Verification Agent** — an independent GPT-4o-mini judge fact-checks the answer against the retrieved context and flags ungrounded claims (feature-flagged via `ENABLE_VERIFICATION_AGENT`)
-4. **Triage Agent** — evaluates confidence and groundedness, routes to Tier 1 or Tier 2 escalation
+1. **Retrieval Agent** — semantic search across ChromaDB, returning up to three matching records and a retrieval relevance signal; broadens the query on a retry
+2. **Answer Agent** — the configured chat model (GPT-4o-mini by default) drafts an answer from retrieved context and cites Ticket IDs; without evidence, it returns a no-evidence response instead of calling the answer model
+3. **Verification Agent** — when enabled, a separate model call checks whether the draft is supported by retrieved context
+4. **Triage Agent** — uses the retrieval relevance signal and, when available, the grounding check to label Tier 1 responses or recommend Tier 2 review
 
-**Adaptive retry:** when the answer fails groundedness verification or confidence is low, the pipeline automatically broadens the query and re-runs retrieval — up to `MAX_RETRIEVAL_RETRIES` (default 2) additional passes — before returning. This retry is surfaced in the UI (a "broadened search" badge on the answer and a session retry-rate stat in the System tab).
+Tier 2 is a review recommendation; no ServiceNow ticket is created automatically.
+
+**Adaptive retry:** when enabled, a failed grounding check or retrieval signal below the routing cutoff broadens the query and re-runs retrieval — up to `MAX_RETRIEVAL_RETRIES` (default 2) additional passes — before returning. This retry is surfaced in the UI (a "broadened search" badge on the answer and a session retry-rate stat in the System tab). Optional live evaluation scores completed support responses after the graph finishes.
 
 Analytical queries ("how many VPN tickets?") route to a separate Tool Agent with four ChromaDB/ServiceNow tools: category search, ticket counting, resolution-time statistics, and live ServiceNow status.
 
 ### RAG Pipeline
 
 - Embedding model: OpenAI `text-embedding-3-small`
-- Vector store: ChromaDB with persistent Railway Volume storage
-- Retrieval: top-3 semantic similarity search, with a separate category-metadata-filtered tool path for analytical queries
-- Query reformulation: GPT-4o-mini rewrites vague queries before retrieval for improved recall
-- Conversation memory: last 5 exchanges retained in a rolling in-memory buffer
+- Vector store: tracked ChromaDB snapshot by default; an optional prepopulated volume can be selected with `CHROMA_DB_PATH`
+- Retrieval: top-3 semantic similarity search, with an optional category metadata filter for support answers
+- Query reformulation: the configured chat model can rewrite vague queries before retrieval
+- Conversation context: the chat UI supplies up to four recent messages to reformulation; a separate RAG helper retains five exchanges in memory
 
-### Data Sources (750 incidents currently embedded)
+### Data Sources (750 records in the tracked snapshot)
 
-Counts below are the **actual number of tickets embedded in the production ChromaDB right now**, verified by querying the collection metadata (not pre-dedup fetch volumes):
+Counts below describe the **tracked Chroma snapshot** in this repository, reconciled with its manifest and collection records (not a live Railway query):
 
-| Source | Embedded tickets | Description |
+| Source | Embedded records | Description |
 |--------|-------|-------------|
-| GitHub Issues (closed, labeled) | 496 | Real open-source IT/dev issue threads |
-| Internal synthetic | 152 | Curated IT incident patterns across 8 categories |
-| HuggingFace ServiceNow dataset | 97 | Synthetic ServiceNow ITSM incidents |
-| Kaggle support dataset | 5 | Real enterprise support tickets (after cross-source dedup) |
-| **Live ServiceNow API** | 0 embedded | Real-time REST connection (`/api/now/table/incident`), authenticated and live; batch-ingest supported, but no batch ingest has been re-run since the connection was (re-)established, so 0 tickets are embedded yet |
+| GitHub Issues (closed, labeled) | 496 | Transformed public software issue threads |
+| Internal synthetic | 152 | Fictional internal-style IT support records across 8 categories |
+| HuggingFace ServiceNow dataset | 97 | Synthetic ServiceNow-format incidents |
+| Kaggle support dataset | 5 | Public customer-support records after deduplication |
+| **Live ServiceNow API** | 0 embedded | Optional REST connector (`/api/now/table/incident`); requires credentials and a reachable instance |
 | **Total** | **750** | 8 categories |
 
-*The distribution is intentionally GitHub-weighted; Kaggle contributes only a handful of tickets after deduplication. ServiceNow is a genuine live API connection (queried in real time via the `check_live_servicenow_status` tool) — authenticated and connected, confirmed via the System tab showing "Live — Connected" — but no tickets have been batch-embedded from it yet, so it contributes 0 embedded tickets to the count above.*
+*The tracked snapshot is GitHub-weighted; Kaggle contributes only a handful of records after deduplication. The ServiceNow connector can make live read requests when configured, but the repository cannot establish whether a Railway instance is currently connected. No live ServiceNow API records are embedded in the tracked snapshot.*
 
-All data passes through a normalization pipeline: text cleaning/truncation, PII masking (Presidio), category inference, validity filtering (minimum length, placeholder/test-ticket rejection, duplicate issue/resolution rejection), and cross-source deduplication on issue text.
+Newly ingested records pass through text cleaning, Presidio-based PII masking, category inference, validity filtering, and cross-source deduplication. The tracked snapshot predates some current safeguards; retrieved content is sanitized again before model use.
 
-### Production Features
+### Current Capabilities
 
-| Feature | Implementation |
-|---------|---------------|
-| PII Detection | Microsoft Presidio with `en_core_web_sm` |
-| Query Audit Logging | JSONL audit trail per query |
-| Evaluation System | LangSmith tracing, 90% accuracy on a 20-question test suite |
-| Real-time Ingestion | Watchdog file monitor — drops a JSON file in `new_tickets/`, it's embedded and ingested automatically |
-| Nightly Refresh | Schedule-based automatic re-ingestion at 02:00 UTC |
-| Feedback Collection | Per-answer thumbs up/down, aggregated into a satisfaction percentage |
-| Category Filtering | ChromaDB metadata filter by incident category |
-| Response Streaming | Token-by-token streaming via LangChain's `.stream()` generator |
-| Fine-tuning Pipeline | 120-example train / 30-example validation dataset prepared; job not yet submitted |
-| Multi-modal Input | Upload an error screenshot with (or instead of) your question — GPT-4o-mini vision extracts the issue, which flows through the same RAG pipeline (PII masking, verification, confidence scoring). Toggle with `ENABLE_IMAGE_UPLOAD`. |
-| Rate Limiting | Per-session sliding-window limit (default 15 requests / 60s) applied before any OpenAI call on every submission path (typed, screenshot, and suggestion chips), so abuse is blocked before it can incur cost. Isolated per session — one user never affects another. |
-| Answer Verification | Independent GPT-4o-mini judge fact-checks every answer against the retrieved context before delivery; ungrounded answers are flagged and force Tier 2 escalation. Toggle with `ENABLE_VERIFICATION_AGENT`. |
-| Adaptive Retry | On failed verification or low confidence, the query is automatically broadened and the pipeline re-runs (up to 2 retries). Surfaced in the UI via a "broadened search" badge and a System-tab retry-rate stat. Toggle with `ENABLE_ADAPTIVE_RETRY`. |
-| Failure Handling | Retry-with-backoff on transient API failures, graceful degradation to a safe escalated response on outages, fail-closed PII masking, and input validation — so a backend failure never surfaces a raw traceback to the user. |
-| Live Evaluation | Every production query is scored in real time (relevance, groundedness, latency) via `live_eval.py`; aggregates shown in the System tab (separate from the offline eval harness). |
-| Deployment Configurability | ~18 environment variables centralized in `config.py` (models, thresholds, retry limits, feature flags) with defaults that reproduce prior behavior exactly; active config shown in the System tab. |
-| Visit Analytics | Anonymous per-session visit logging (timestamp + random UUID only, no PII) with a private, password-protected admin view at `?admin=<secret>` (gated by `ADMIN_ANALYTICS_KEY`). |
+| Capability | Status | What it does |
+|------------|--------|--------------|
+| Support answers and analytical questions | Implemented | Support answers use retrieval, answer, and triage nodes; analytical questions use a separate tool-agent flow. |
+| Retrieval and category filtering | Implemented | Searches the configured Chroma collection; a selected support category applies a metadata filter. |
+| Privacy and audit | Implemented | Presidio masks detected text before model calls; local query logs store metadata rather than raw questions or answers. Masking does not guarantee detection of every sensitive detail. |
+| Feedback and visit analytics | Implemented | Stores local JSONL feedback metadata and random per-session visit IDs; the admin view requires `ADMIN_ANALYTICS_KEY`. |
+| Reliability controls | Implemented | Validates input, limits requests per session, retries transient failures, and returns a review recommendation on degraded responses. |
+| Grounding verification and adaptive retry | Optional | Feature flags control the judge and query-broadening retry loop for support answers. |
+| Live evaluation and LangSmith tracing | Optional | Completed support answers can be scored locally; tracing runs only when externally configured and may include generated, retrieved, or error content in child traces. |
+| Screenshot input and ServiceNow reads | Optional | Vision extracts an issue from a supplied image; configured ServiceNow requests read incident data. No ticket is created. |
+| Watcher and scheduler | Manual utility | Started explicitly; Railway startup does not launch them. The scheduler runs at 02:00 host-local time. |
+| Fine-tuning preparation and model comparison | Manual utility | The current 152-record source produces a 121/31 training/validation split and supports a separate comparison harness. No fine-tuned model is active by default. |
+| Response delivery | Implemented | The Streamlit chat displays a completed graph response; a separate RAG helper supports token streaming. |
 
 ---
 
 ## Evaluation Results
 
-Tested against 20 questions spanning all 8 incident categories. Most recent run: **2026-09-16** (post-ServiceNow-fix, `eval_results.json`):
+The saved [`eval_results.json`](eval_results.json) run from **2026-09-16** uses a fixed set of 20 questions spanning eight support categories plus out-of-scope prompts. It checks expected answer-versus-refusal behavior with text markers; it does not grade resolution quality or deployed-user outcomes:
 
-- Overall accuracy: 90% (18/20)
-- In-scope questions answered correctly: 14/16
-- Out-of-scope questions refused correctly: 4/4
-- Both remaining failures were refusals on in-scope questions with weak/borderline retrieval matches, not fabricated answers — no hallucinated ticket IDs observed in the suite
+- Expected behavior matched: **18/20** questions
+- In-scope prompts answered: **14/16**; out-of-scope prompts refused: **4/4**
+- The other two in-scope prompts were refused. This result is a small, fixed benchmark, not a general accuracy guarantee.
 
 ---
 
@@ -112,23 +108,23 @@ Tested against 20 questions spanning all 8 incident categories. Most recent run:
 - text-embedding-3-small (OpenAI) — semantic embeddings
 - LangChain 1.3+ — RAG pipeline orchestration
 - LangGraph 1.2+ — multi-agent StateGraph
-- LangSmith — production tracing and evaluation
+- LangSmith — optional tracing when configured
 
 **Data & Storage**
-- ChromaDB — vector store with persistent volume
-- Kaggle API — real incident dataset ingestion
-- GitHub Issues API — open source IT issues
+- ChromaDB — tracked vector-store snapshot; optional external persistence
+- Kaggle API — public support dataset ingestion
+- GitHub Issues API — public software issues
 - HuggingFace Datasets — ServiceNow ITSM data
 - JSONL — audit and feedback logging
 
-**Security & Compliance**
+**Privacy & Safety**
 - Microsoft Presidio — PII detection and masking
 - spaCy `en_core_web_sm` — NER model for PII
 - Environment-based secrets management
-- Full query audit trail
+- Local query metadata audit log
 
 **Deployment**
-- Railway — containerized deployment with persistent volume storage
+- Railway — Nixpacks deployment using the tracked snapshot by default
 - Nixpacks — automated build configuration
 - Streamlit — chat interface
 
@@ -139,19 +135,19 @@ Tested against 20 questions spanning all 8 incident categories. Most recent run:
 ```
 it-support-rag-agent/
 ├── app.py                    # Streamlit UI (chat + System tab)
-├── rag.py                    # RAG query layer + streaming
-├── agent_pipeline.py         # LangGraph 4-agent pipeline + tools + adaptive retry
+├── rag.py                    # Separate RAG helper, including streaming
+├── agent_pipeline.py         # Four-node support graph + analytical tools
 ├── config.py                 # Centralized env-var config + feature flags
 ├── security.py               # Presidio PII masking (fail-closed) + audit logging
 ├── normalize.py              # Multi-source data normalization + dedup
 ├── error_handling.py         # Retry/backoff, safe-fallback, input validation
 ├── rate_limiter.py           # Per-session sliding-window rate limiting
 ├── image_processing.py       # Multi-modal: GPT-4o-mini vision screenshot extraction
-├── live_eval.py              # Real-time per-query scoring
-├── analytics.py              # Anonymous visit logging (admin-gated view)
+├── live_eval.py              # Optional completed support-run scoring
+├── analytics.py              # Per-session visit logging (admin-gated view)
 ├── ingest_all.py             # Multi-source ingestion pipeline
-├── watcher.py                # Real-time file ingestion
-├── scheduler.py              # Nightly refresh scheduler
+├── watcher.py                # Optional manually started file ingestion
+├── scheduler.py              # Optional manually started refresh scheduler
 ├── eval.py                   # 20-question behavioral eval suite
 ├── start.sh / railway.toml   # Railway startup + deploy config
 ├── DECISIONS.md              # Documented architecture tradeoffs
@@ -159,41 +155,42 @@ it-support-rag-agent/
 │   ├── kaggle_connector.py
 │   ├── github_connector.py
 │   ├── huggingface_connector.py
-│   └── servicenow_connector.py   # Live ServiceNow REST connector
+│   └── servicenow_connector.py   # Optional read-only REST connector
 ├── eval_harness/             # Offline 5-dimension evaluation
-│   ├── metrics.py            # groundedness/relevance/citation/refusal/latency
+│   ├── metrics.py            # grounding/relevance/citation-ID/refusal/latency
 │   ├── runner.py             # runs the harness over the test set
 │   ├── analyze.py            # honest averages (excl. correct refusals)
 │   └── compare_runs.py       # before/after diff
 ├── finetune/
-│   ├── prepare_dataset.py    # Fine-tuning dataset prep (120/30 JSONL)
-│   ├── run_finetune.py       # OpenAI fine-tuning job script (not executed)
+│   ├── prepare_dataset.py    # Manual fine-tuning JSONL preparation
+│   ├── run_finetune.py       # Manual OpenAI fine-tuning upload/job script
 │   ├── compare_models.py     # base-vs-finetuned comparison harness
 │   └── FINETUNE_STATUS.md    # decision record + baseline
-├── tests/                    # 57 pytest tests (54 fast + 3 API-gated)
-│   ├── test_normalize.py  test_security.py  test_routing_logic.py
-│   ├── test_retry_decision.py  test_error_handling.py  test_rate_limiter.py
-│   ├── test_image_processing.py  test_finetune_config.py  test_integration.py
-│   └── conftest.py
+├── tests/                    # Fast regression tests + API-gated integration tests
 ├── .github/workflows/tests.yml   # CI: runs fast tests on every push
 └── data/
-    └── tickets.py            # 152 synthetic IT incidents
+    └── tickets.py            # 152 fictional internal-style support records
 ```
 
 ---
 
 ## Local Setup
 
+Use Python **3.12.x**, matching CI and Railway. `requirements.txt` pins direct
+packages and applies the generated `constraints-py312.txt` transitive pins.
+The spaCy `en_core_web_sm` 3.8.0 model is installed with those requirements.
+
 ```bash
 # Clone and setup
 git clone https://github.com/Yasasu06/it-support-rag-agent
 cd it-support-rag-agent
-python3 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 # Create a .env file in the project root with:
 # OPENAI_API_KEY=sk-...
+# Optional LangSmith tracing:
 # LANGSMITH_API_KEY=ls-...
 # LANGCHAIN_PROJECT=...
 # KAGGLE_USERNAME=...
@@ -201,38 +198,51 @@ pip install -r requirements.txt
 # GITHUB_TOKEN=ghp_...
 # GITHUB_USERNAME=...
 
-# Download spaCy model
-python3 -m spacy download en_core_web_sm
-
-# Build knowledge base
-python3 ingest_all.py
-
 # Run the app
 streamlit run app.py
 ```
+
+The repository includes a tracked Chroma snapshot. See
+[`index_manifest.json`](index_manifest.json) for its model, metric, record count,
+and known source provenance. Railway startup validates this existing index,
+requires `OPENAI_API_KEY`, and checks the installed spaCy PII model; it does not
+fetch datasets or rebuild Chroma. The default `CHROMA_DB_PATH` is the
+repository's `chroma_db/` directory, resolved
+from the project root even when launched elsewhere. A Railway volume is optional:
+set `CHROMA_DB_PATH` to its mount path only after placing a compatible,
+non-empty index there. An empty mount hides the tracked snapshot at that path
+and causes startup to fail. To rebuild deliberately, run `python3.12 ingest_all.py`
+as a separate maintenance action; it calls external sources and the embedding
+API and replaces the configured collection. The watcher and scheduler are also
+manual utilities and are not launched by Railway. Query audit, feedback, live
+evaluation, and visit logs are local JSONL files; their history is not retained
+across redeploys unless storage for those paths is configured separately. To
+intentionally refresh transitive pins, review direct versions in
+`requirements.txt`, run `python3.12 refresh_constraints.py`, review the diff,
+and validate the result in CI before deployment.
 
 ---
 
 ## Configuration
 
-All deployment-tunable behavior is centralized in [config.py](config.py) and
-overridable via environment variables. Every value defaults to exactly what the
-system used before the config layer existed, so **the defaults reproduce the
-current behavior identically** — you only change anything by explicitly setting
-a variable. The System tab shows the active configuration at runtime.
+Deployment settings are centralized in [config.py](config.py) and overridable
+via environment variables. The defaults select the documented chat model,
+tracked index, and enabled feature flags. The System tab shows the active
+configuration at runtime.
 
 | Env var | Default | Controls |
 |---------|---------|----------|
-| `CHAT_MODEL` | `gpt-4o-mini` | LLM used for answers, verification, reformulation, and scoring |
+| `CHAT_MODEL` | `gpt-4o-mini` | Base LLM for answers, verification, reformulation, and scoring |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model for retrieval (must match the model the index was built with) |
+| `CHROMA_DB_PATH` | Repository `chroma_db/` | Existing index used by startup, retrieval, ingestion, and optional utilities; relative paths resolve from the repository root |
 | `RETRIEVAL_K` | `3` | Number of tickets retrieved per query |
-| `CONFIDENCE_HIGH_THRESHOLD` | `0.60` | Similarity score at/above which confidence is labeled High |
-| `CONFIDENCE_MEDIUM_THRESHOLD` | `0.20` | Score at/above which confidence is Medium; below triggers Tier 2 escalation |
-| `MAX_RETRIEVAL_RETRIES` | `2` | Max adaptive-retry passes when an answer fails grounding/confidence |
+| `CONFIDENCE_HIGH_THRESHOLD` | `0.60` | Legacy configuration value; the chat UI does not display a High band |
+| `CONFIDENCE_MEDIUM_THRESHOLD` | `0.20` | Raw retrieval relevance cutoff for Tier 2 review recommendation; not a probability |
+| `MAX_RETRIEVAL_RETRIES` | `2` | Max adaptive-retry passes when an answer fails grounding or falls below the retrieval review cutoff |
 | `RETRY_DELAY_SECONDS` | `1.0` | Delay between transient-failure retries in the error-handling layer |
 | `LANGGRAPH_RECURSION_LIMIT` | `20` | LangGraph step budget for the multi-agent pipeline |
 | `MAX_QUESTION_LENGTH` | `2000` | Max characters accepted for a user question before rejection |
-| `ENABLE_LIVE_EVAL` | `true` | Real-time per-query scoring/logging (`live_eval`) |
+| `ENABLE_LIVE_EVAL` | `true` | Scores and logs completed support-answer runs when enabled |
 | `ENABLE_VERIFICATION_AGENT` | `true` | Groundedness verification node in the pipeline; when false, answer routes straight to triage |
 | `ENABLE_ADAPTIVE_RETRY` | `true` | Query-broadening retry loop; when false, the pipeline ends after the first pass |
 | `ENABLE_SERVICENOW_LIVE` | `true` | Live ServiceNow status tool; when false it reports the connection is disabled |
@@ -254,8 +264,8 @@ APP_ENVIRONMENT=staging streamlit run app.py
 
 ## Testing
 
-The project has a pytest suite split into fast unit tests (no API key, no
-network) and slower integration tests (real end-to-end pipeline).
+The project has fast tests that do not call external APIs and separate
+API-gated integration tests for the live pipeline.
 
 ```bash
 # Run the full suite (fast unit tests + integration tests).
@@ -263,19 +273,14 @@ network) and slower integration tests (real end-to-end pipeline).
 # otherwise they skip automatically.
 python -m pytest tests/ -v
 
-# Run only the fast unit tests — no API key needed, completes in ~2 seconds.
+# Run only the fast tests — no API key needed.
 python -m pytest tests/ -v --ignore=tests/test_integration.py
 ```
 
-**57 tests total** (`pytest tests/ --collect-only`): **54 fast unit tests** plus
-3 API-gated integration tests. The fast tests span 8 files — `test_normalize.py`,
-`test_security.py`, `test_routing_logic.py`, `test_retry_decision.py`,
-`test_error_handling.py`, `test_rate_limiter.py`, `test_image_processing.py`,
-`test_finetune_config.py` — covering validity filtering, category inference,
-deduplication, PII masking, audit logging, query routing (including
-word-boundary regression tests for keyword misrouting), retry-decision logic,
-error-handling/retry decorators, rate-limiting, image validation, and
-fine-tuned-model selection — all with zero API cost.
+The fast tests cover normalization, privacy boundaries, index compatibility,
+deployment preflight, routing, retries, rate limiting, image validation, and
+fine-tuned-model selection without external API cost. Run collection locally
+for the current test count; the suite continues to grow.
 
 **Integration tests** (`test_integration.py`) exercise the real RAG and
 multi-agent pipelines against OpenAI and auto-skip when no API key is present.
@@ -285,30 +290,27 @@ multi-agent pipelines against OpenAI and auto-skip when no API key is present.
 A [GitHub Actions workflow](.github/workflows/tests.yml) runs the fast unit test
 suite (`pytest tests/ --ignore=tests/test_integration.py`) automatically on
 every push and pull request to `main` (Ubuntu, Python 3.12). Integration tests
-are intentionally excluded from CI to avoid exposing an API key as a secret and
-incurring per-push API cost — a deliberate tradeoff documented in the workflow
-file. Current status is shown by the badge at the top of this README.
+are intentionally excluded from CI because they make external API calls and
+incur cost. The badge at the top links to the workflow's current status.
 
 ---
 
 ## Evaluation Harness
 
-Beyond pass/fail accuracy, the project ships a structured evaluation harness
-(`eval_harness/`) that scores every answer on **five independent dimensions**,
-so a run reveals *where* the system is weak rather than just whether it passed:
+Beyond the fixed answer/refusal benchmark, the optional manual evaluation
+harness (`eval_harness/`) records five dimensions for each test case. LLM-judged
+scores are estimates and can vary between runs:
 
 | Dimension | Type | What it measures |
 |-----------|------|------------------|
-| **Groundedness** | LLM judge | Is every claim in the answer supported by retrieved context? |
-| **Relevance** | LLM judge | Does the answer actually address the question asked? |
-| **Citation accuracy** | Pure logic | Does every cited Ticket ID appear in the retrieved sources? |
+| **Groundedness** | LLM judge | How well is the answer supported by retrieved context? Skipped when no context exists. |
+| **Relevance** | LLM judge | How well does the answer address the question? |
+| **Citation-ID validity** | Pure logic | Do cited Ticket IDs appear in the retrieved source-ID list? This does not establish semantic citation correctness. |
 | **Refusal correctness** | Pure logic | Did it answer in-scope questions and refuse out-of-scope ones? |
 | **Latency** | Pure logic | Response time against a chat-interface threshold |
 
-Scoring each quality separately catches failure modes a single score hides —
-e.g. an answer can be perfectly grounded yet irrelevant (answering a different
-question with real ticket data), and citation accuracy independently guards
-against citing a Ticket ID that was never retrieved.
+Separate dimensions make it easier to inspect grounding, relevance, and
+unsupported source IDs without treating any one score as overall accuracy.
 
 ```bash
 # Run the full harness (multiple LLM calls per question — takes a few minutes)
@@ -318,23 +320,18 @@ python3 eval_harness/runner.py
 python3 eval_harness/compare_runs.py old.json new.json
 ```
 
-Each run writes a timestamped `eval_harness/harness_results.json` with
-per-dimension averages plus full per-question detail.
+Each run writes `eval_harness/harness_results.json` with a timestamp,
+per-dimension averages, and per-question detail. This local artifact is not a
+live production dashboard.
 
-**Reading the groundedness/relevance numbers honestly** (most recent run:
-**2026-09-16**, post-ServiceNow-fix — LLM-judged scores vary somewhat
-run-to-run): the raw averages (groundedness **0.685**, relevance **0.69**,
-citation accuracy **1.0**, refusal correctness **1.0**, latency **0.745**) are
-pulled down by the four correctly-refused out-of-scope questions, which score
-0 by construction — there is no context to be grounded in and refusing is the
-right behaviour. Excluding only those correct refusals (never false refusals,
-which are real misses), the averages rise to **0.856 groundedness** and
-**0.863 relevance**. Run `python3 eval_harness/analyze.py` to see both numbers
-side by side plus the genuine in-scope weak spots, which are kept in both
-figures rather than hidden.
+The harness output is a local generated file and is not included in the
+repository. Citation-ID validity only checks IDs against retrieved sources;
+it does not establish semantic support. `python3 eval_harness/analyze.py`
+shows overall judge-score averages alongside averages excluding correct
+out-of-scope refusals, while retaining false refusals in both views.
 
-This is **separate from the always-on live evaluation** (`live_eval.py`), which
-scores real production queries continuously as they happen. The harness is for
+This is **separate from optional live evaluation** (`live_eval.py`), which
+scores completed support-answer runs when enabled. The harness is for
 deliberate, structured test runs against a fixed question set — the kind you run
 before and after a change to measure impact.
 
@@ -343,50 +340,44 @@ before and after a change to measure impact.
 ## Key Design Decisions
 
 **Why RAG over fine-tuning?**
-RAG grounds answers in the actual incident database at query time. Fine-tuning bakes knowledge into model weights, making updates expensive. For a knowledge base that updates daily, RAG is the correct architectural choice.
+RAG grounds answers in the incident database at query time. Fine-tuning bakes knowledge into model weights, making updates expensive. The repository provides a manual path to refresh the knowledge base.
 
 **Why LangGraph over a single chain?**
-The four-agent separation (retrieval, answer, verification, triage) allows independent optimization of each stage and makes the adaptive-retry loop a clean conditional edge. It also enables the analytical tool-agent path for aggregate queries without affecting the RAG path.
+The four support nodes (retrieval, answer, optional verification, triage) make the retry loop an explicit conditional edge. Analytical questions take a separate tool-agent path.
 
-**Why ChromaDB over Pinecone?**
-ChromaDB runs locally and on Railway with zero infrastructure overhead. For a portfolio deployment, operational simplicity matters. Production migration to Pinecone or Azure AI Search would be a configuration change, not an architectural one.
+**Why ChromaDB?**
+ChromaDB lets this deployment use a tracked local snapshot without operating a separate vector-search service. Moving to another search backend would require migration and compatibility checks.
 
-**Confidence calibration**
-Similarity scores from this ChromaDB configuration top out around 0.32 for correct matches. Thresholds were calibrated empirically against observed score distributions: High (≥0.60), Medium (≥0.20), Low (<0.20) — the Low tier triggers automatic Tier 2 escalation.
+**Retrieval routing**
+The raw Chroma retrieval relevance signal is not a calibrated probability. The existing 0.20 cutoff guides Tier 2 review recommendations; the chat UI does not display High/Medium/Low confidence bands.
 
 ---
 
-## Known Tradeoffs & Production Considerations
+## Deployment Model & Future Extensions
 
 Deliberate engineering decisions and prioritized gaps — documented for
 transparency rather than hidden. Full rationale for the vector-store decision
 lives in [DECISIONS.md](DECISIONS.md).
 
-- **Vector store is pre-built and committed to git** (see [DECISIONS.md](DECISIONS.md))
-  rather than rebuilt from a Railway persistent volume. This guarantees the
-  deployed app always has data within Railway's cold-start window, at the cost
-  of shipping an ~11MB binary in version control. Migrating to a persistent
-  volume with conditional re-ingestion is the planned proper fix.
-- **ServiceNow has no batch-ingested tickets yet.** The connector is a genuine
-  live REST integration and is authenticated and connected in production (the
-  System tab shows "Live — Connected"), but no batch ingest has been run since
-  the connection was established, so it contributes 0 embedded tickets to the
-  count above. Live real-time queries via `check_live_servicenow_status` work
-  against the connected instance regardless of the batch-embedded count.
+- **Vector store is pre-built and committed to git** (see [DECISIONS.md](DECISIONS.md)).
+  Startup uses and validates this snapshot by default. The repository does not
+  prove that a Railway volume is attached; an optional volume must contain a
+  compatible index before `CHROMA_DB_PATH` is pointed at it. Refresh is manual.
+- **ServiceNow contributes no records to the tracked snapshot.** The optional
+  read connector requires external credentials and a reachable instance; its
+  status in a deployed environment must be checked there.
 - **Uneven source mix.** After cross-source deduplication the knowledge base is
   heavily GitHub-weighted (496 of 750); Kaggle contributes only 5 tickets.
-- **Fine-tuning was scoped but never executed.** The dataset-prep, job script,
-  and model-comparison harness are all built, but the OpenAI fine-tuning job was
-  never submitted (self-serve access gated). The system can hot-swap a
-  fine-tuned model via config the moment one exists — see
+- **Fine-tuning remains an extension.** Dataset preparation, upload safeguards,
+  and a separate base-versus-candidate comparison harness are available. No
+  fine-tuning job or fine-tuned production model is evidenced here; see
   [finetune/FINETUNE_STATUS.md](finetune/FINETUNE_STATUS.md).
-- **Small eval set.** Accuracy is measured on a fixed 20-question suite; the
-  LLM-judged metrics vary run-to-run, so the ~90% figure is a reproducible
-  central value rather than a fixed guarantee.
+- **Evaluation scope.** The saved 18/20 result measures expected answer/refusal
+  behavior on one fixed set. LLM-judged grounding and relevance are separate
+  estimates and vary by run.
 
 ---
 
 ## Built By
 
 **Yasaswi**
-

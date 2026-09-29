@@ -34,7 +34,7 @@ except Exception:
 
 # Presidio's AnalyzerEngine() defaults to the large spaCy model if no
 # nlp_engine is given. Pin to the small model explicitly so it matches what's
-# actually downloaded at startup (railway.toml), keeping memory usage down.
+# installed with pinned requirements at build time, keeping memory usage down.
 # Loading Presidio/spaCy is wrapped so a missing model or init failure at
 # deploy time is a controlled, logged condition rather than an import-time
 # crash of the whole app. mask_pii() then FAILS CLOSED (see below) — it never
@@ -107,6 +107,31 @@ def mask_pii(text: str) -> tuple[str, list]:
     return anonymized.text, detected_types
 
 
+def sanitize_external_text(text: str) -> str:
+    """Fail closed before text is sent to a model, trace, or stored externally."""
+    masked, _ = mask_pii(text)
+    return masked
+
+
+def sanitize_trace_payload(value):
+    """Best-effort trace redaction that never falls back to raw content."""
+    if isinstance(value, str):
+        try:
+            return sanitize_external_text(value)
+        except Exception:
+            return "[REDACTED]"
+    if isinstance(value, dict):
+        return {
+            sanitize_trace_payload(key): sanitize_trace_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [sanitize_trace_payload(item) for item in value]
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    return "[REDACTED]"
+
+
 def is_safe_query(text: str) -> tuple[bool, list]:
     """
     Returns True if no PII detected.
@@ -121,9 +146,9 @@ def log_query(
     question: str,
     masked_question: str,
     answer: str,
-    confidence_score: float,
+    confidence_score: float | None,
     escalation: bool,
-    tier: str,
+    tier: str | None,
     pii_detected: list,
     sources: list,
 ) -> None:
@@ -137,7 +162,8 @@ def log_query(
         "pii_detected": pii_detected,
         "pii_found": len(pii_detected) > 0,
         "answer_length": len(answer),
-        "confidence_score": round(confidence_score, 3),
+        "confidence_score": round(confidence_score, 3)
+        if confidence_score is not None else None,
         "escalation_required": escalation,
         "tier": tier,
         "source_ticket_ids": [s.get("ticket_id", "unknown") for s in sources],
@@ -155,7 +181,7 @@ def get_audit_summary() -> dict:
     - total queries
     - queries with PII detected
     - queries escalated to Tier 2
-    - average confidence score
+    - average recorded raw retrieval score (legacy key: avg_confidence)
     - most common PII types detected
     """
     log_path = os.path.join(os.path.dirname(__file__), LOG_FILE)
@@ -170,11 +196,21 @@ def get_audit_summary() -> dict:
         }
 
     entries = []
-    with open(log_path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                entries.append(json.loads(line))
+    try:
+        with open(log_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    entries.append(json.loads(line))
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Query audit history is unavailable")
+        return {
+            "total_queries": 0,
+            "pii_queries": 0,
+            "escalated_queries": 0,
+            "avg_confidence": 0,
+            "common_pii_types": [],
+        }
 
     if not entries:
         return {
@@ -194,7 +230,11 @@ def get_audit_summary() -> dict:
 
     pii_counts = Counter(all_pii_types)
 
-    avg_conf = sum(e.get("confidence_score", 0) for e in entries) / len(entries)
+    recorded_scores = [
+        e["confidence_score"] for e in entries
+        if isinstance(e.get("confidence_score"), (int, float))
+    ]
+    avg_conf = sum(recorded_scores) / len(recorded_scores) if recorded_scores else 0
 
     return {
         "total_queries": len(entries),

@@ -8,6 +8,7 @@ import re
 import logging
 from typing import Optional
 from security import mask_pii
+from error_handling import safe_error_type
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ def normalize_ticket(
     except Exception as e:
         logger.warning(
             f"Failed to normalize ticket "
-            f"{idx}: {e}"
+            f"{idx}: {safe_error_type(e)}"
         )
         return None
 
