@@ -313,7 +313,7 @@ def check_live_servicenow_status() -> str:
 
     connection_result = servicenow_test_connection()
     if not connection_result["success"]:
-        return "ServiceNow connection check failed."
+        return connection_result["message"]
 
     state_counts = live_incident_count_by_state()
     if not state_counts:

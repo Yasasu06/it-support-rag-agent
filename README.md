@@ -260,6 +260,22 @@ CHAT_MODEL=gpt-4o ENABLE_VERIFICATION_AGENT=false ENABLE_LIVE_EVAL=false \
 APP_ENVIRONMENT=staging streamlit run app.py
 ```
 
+### ServiceNow connection checks
+
+Configure `SERVICENOW_INSTANCE_URL` with the HTTPS instance address (without
+a login or API path), plus `SERVICENOW_USERNAME` and `SERVICENOW_PASSWORD`
+in the application environment. For the hosted demo, these settings belong
+in Railway; the ignored local `.env` is not deployed from Git.
+
+The System tab's connection button verifies incident API JSON and displays
+the failure reason. A developer instance can return an HTTP 200 hibernation
+page, which does not establish API access. If it is hibernating, sign in to
+the [ServiceNow Developer portal](https://developer.servicenow.com/), open
+**Manage my Instance**, select **Wake Instance**, and wait until the status
+is **Online** before retrying. Compare the current instance URL and credentials
+with Railway's settings if the instance has been replaced. HTTP 401 indicates
+an authentication failure; HTTP 403 indicates denied incident read access.
+
 ---
 
 ## Testing

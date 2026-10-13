@@ -701,6 +701,20 @@ def format_grounded_rate(rate: float | None) -> str:
     return f"{rate:.0%}" if rate is not None else "N/A"
 
 
+def check_servicenow_connection() -> dict:
+    """Retain the safe diagnostic so it remains available after a UI rerun."""
+    result = servicenow_test_connection()
+    st.session_state.servicenow_connection_result = result
+    return result
+
+
+def render_servicenow_connection_result(result: dict) -> None:
+    if result["success"]:
+        st.success(result["message"])
+    else:
+        st.error(result["message"])
+
+
 def render_response_status(msg: dict) -> None:
     labels = response_status_labels(msg)
     if labels:
@@ -1333,8 +1347,12 @@ with tab2:
         _sn_status = "Disabled"
     elif _sn_configured:
         if st.button("Check ServiceNow connection", key="servicenow_connection_check"):
-            st.session_state.servicenow_connection_ok = servicenow_test_connection()["success"]
-        connection_ok = st.session_state.get("servicenow_connection_ok")
+            with st.spinner("Checking ServiceNow connection..."):
+                check_servicenow_connection()
+        connection_result = st.session_state.get("servicenow_connection_result")
+        connection_ok = connection_result["success"] if connection_result else None
+        if connection_result:
+            render_servicenow_connection_result(connection_result)
         if connection_ok is True:
             _sn_status = "Live — Connected"
             _sn_color = "#10B981"

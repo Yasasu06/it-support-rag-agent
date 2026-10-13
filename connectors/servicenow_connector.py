@@ -10,6 +10,7 @@ by an absent ServiceNow instance.
 import logging
 import os
 from typing import Optional
+from urllib.parse import urlsplit
 
 import requests
 from dotenv import load_dotenv
@@ -41,11 +42,35 @@ def is_configured() -> bool:
     Returns True only if all three ServiceNow credentials are present.
     Never crashes if missing — callers check this before making any requests.
     """
-    return bool(SERVICENOW_URL and SERVICENOW_USER and SERVICENOW_PASS)
+    return bool(
+        (SERVICENOW_URL or "").strip()
+        and (SERVICENOW_USER or "").strip()
+        and SERVICENOW_PASS
+    )
+
+
+def _get_base_url() -> str:
+    """Accept an HTTPS instance origin without leaking configuration values."""
+    base_url = (SERVICENOW_URL or "").strip().rstrip("/")
+    parsed = urlsplit(base_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or any(character.isspace() for character in parsed.netloc)
+    ):
+        raise ValueError("Invalid ServiceNow instance URL")
+    # Accessing port also rejects malformed port values before a request.
+    parsed.port
+    return base_url
 
 
 def _get_auth():
-    return (SERVICENOW_USER, SERVICENOW_PASS)
+    return ((SERVICENOW_USER or "").strip(), SERVICENOW_PASS)
 
 
 def test_connection() -> dict:
@@ -57,31 +82,69 @@ def test_connection() -> dict:
     if not is_configured():
         return {
             "success": False,
-            "message": "ServiceNow credentials not configured in .env",
+            "message": (
+                "ServiceNow is not configured. Set SERVICENOW_INSTANCE_URL, "
+                "SERVICENOW_USERNAME, and SERVICENOW_PASSWORD in the application environment."
+            ),
         }
 
-    # Defensively strip a trailing slash so we never send a double-slash path
-    # like https://instance.service-now.com//api/now/... if the env var was
-    # copied with one. (Verified this doesn't actually break ServiceNow's
-    # gateway, but it's still wrong and worth normalizing.)
-    base_url = SERVICENOW_URL.rstrip("/")
+    try:
+        base_url = _get_base_url()
+    except ValueError:
+        return {
+            "success": False,
+            "message": (
+                "SERVICENOW_INSTANCE_URL must be the HTTPS instance address "
+                "without a login/API path, embedded credentials, query, or fragment."
+            ),
+        }
 
     try:
-        url = f"{base_url}/api/now/table/incident?sysparm_limit=1"
+        url = f"{base_url}/api/now/table/incident"
         response = requests.get(
             url,
             auth=_get_auth(),
+            params={"sysparm_limit": 1, "sysparm_fields": "sys_id"},
             headers={"Accept": "application/json"},
-            # Bumped from 10s: ServiceNow Personal Developer Instances
-            # hibernate after inactivity and can take well over 10s to wake on
-            # the first request after being asleep.
             timeout=25,
+            allow_redirects=False,
         )
 
         if response.status_code == 200:
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict) and isinstance(payload.get("result"), list):
+                return {
+                    "success": True,
+                    "message": "Connected successfully to ServiceNow instance",
+                }
+            # Developer instances can return an HTTP 200 hibernation page.
+            # Report the condition using fixed text, never the provider body.
+            if "hibernating" in response.text.lower():
+                return {
+                    "success": False,
+                    "message": (
+                        "The ServiceNow instance is hibernating. Sign in to "
+                        "developer.servicenow.com, open Manage my Instance, select "
+                        "Wake Instance, and retry once its status is Online."
+                    ),
+                }
             return {
-                "success": True,
-                "message": "Connected successfully to ServiceNow instance",
+                "success": False,
+                "message": (
+                    "ServiceNow returned an unexpected response instead of incident API JSON. "
+                    "Check the instance URL and whether the instance is Online."
+                ),
+            }
+        elif 300 <= response.status_code < 400:
+            return {
+                "success": False,
+                "message": (
+                    "ServiceNow redirected the incident API request. Check the instance "
+                    "URL and status; a login or redirect page does not confirm API access."
+                ),
             }
         elif response.status_code == 401:
             return {
@@ -106,13 +169,20 @@ def test_connection() -> dict:
                 ),
             }
 
+    except requests.exceptions.SSLError:
+        return {
+            "success": False,
+            "message": (
+                "Could not verify the ServiceNow HTTPS certificate (TLS error). Check the instance "
+                "URL and certificate configuration."
+            ),
+        }
     except requests.exceptions.Timeout:
         return {
             "success": False,
             "message": (
-                "Connection timed out after 25s - if this is a fresh/idle "
-                "ServiceNow dev instance it may be hibernating; open it in a "
-                "browser once to wake it up, then retry."
+                "The ServiceNow connection timed out. Check the instance status "
+                "in developer.servicenow.com and wake it if it is Hibernating, then retry."
             ),
         }
     except requests.exceptions.ConnectionError:
@@ -135,7 +205,7 @@ def fetch_incidents_batch(limit: int = 100) -> list:
         return []
 
     try:
-        url = f"{SERVICENOW_URL.rstrip('/')}/api/now/table/incident"
+        url = f"{_get_base_url()}/api/now/table/incident"
         params = {
             "sysparm_limit": limit,
             "sysparm_query": "active=false",
@@ -151,6 +221,7 @@ def fetch_incidents_batch(limit: int = 100) -> list:
             params=params,
             headers={"Accept": "application/json"},
             timeout=30,
+            allow_redirects=False,
         )
 
         if response.status_code != 200:
@@ -206,7 +277,7 @@ def live_lookup_incident(incident_number: str) -> Optional[dict]:
         return None
 
     try:
-        url = f"{SERVICENOW_URL.rstrip('/')}/api/now/table/incident"
+        url = f"{_get_base_url()}/api/now/table/incident"
         params = {
             "sysparm_query": f"number={incident_number}",
             "sysparm_limit": 1,
@@ -218,6 +289,7 @@ def live_lookup_incident(incident_number: str) -> Optional[dict]:
             params=params,
             headers={"Accept": "application/json"},
             timeout=10,
+            allow_redirects=False,
         )
 
         if response.status_code != 200:
@@ -250,7 +322,7 @@ def live_incident_count_by_state() -> dict:
         return {}
 
     try:
-        url = f"{SERVICENOW_URL.rstrip('/')}/api/now/table/incident"
+        url = f"{_get_base_url()}/api/now/table/incident"
         params = {
             "sysparm_limit": 1000,
             "sysparm_fields": "state",
@@ -262,6 +334,7 @@ def live_incident_count_by_state() -> dict:
             params=params,
             headers={"Accept": "application/json"},
             timeout=15,
+            allow_redirects=False,
         )
 
         if response.status_code != 200:
