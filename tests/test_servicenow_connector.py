@@ -133,6 +133,18 @@ def test_http_failure_preserves_reason_without_provider_body(monkeypatch, status
     assert reason.lower() in result["message"].lower()
 
 
+def test_http_401_with_invalid_mfa_header_identifies_mfa_requirement(monkeypatch):
+    response = _response(_PRIVATE_DETAIL, status=401)
+    response.headers["X-MFA_TOKEN"] = "invalid"
+    monkeypatch.setattr(servicenow_connector.requests, "get", lambda *_a, **_k: response)
+
+    result = servicenow_connector.test_connection()
+
+    _assert_safe_failure(result)
+    assert "requires mfa" in result["message"].lower()
+    assert "username and password" in result["message"].lower()
+
+
 @pytest.mark.parametrize("error, reason", [
     (requests.exceptions.SSLError(_PRIVATE_DETAIL), "TLS"),
     (requests.exceptions.Timeout(_PRIVATE_DETAIL), "timed out"),

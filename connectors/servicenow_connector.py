@@ -147,10 +147,20 @@ def test_connection() -> dict:
                 ),
             }
         elif response.status_code == 401:
+            if response.headers.get("X-MFA_TOKEN", "").strip().lower() == "invalid":
+                return {
+                    "success": False,
+                    "message": (
+                        "ServiceNow accepted the username and password but requires MFA "
+                        "for this REST request (HTTP 401). Use a dedicated integration "
+                        "account that is permitted to access the REST API without interactive MFA."
+                    ),
+                }
             return {
                 "success": False,
                 "message": (
-                    "Authentication failed (HTTP 401). Check ServiceNow credentials."
+                    "Authentication failed (HTTP 401). The username/password or a "
+                    "ServiceNow inbound authentication policy rejected the request."
                 ),
             }
         elif response.status_code == 403:
