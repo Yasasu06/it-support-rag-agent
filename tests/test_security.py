@@ -11,6 +11,8 @@ import os
 import sys
 
 import pytest
+from langchain_core.messages import AIMessage
+from langchain_core.output_parsers import StrOutputParser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -40,6 +42,26 @@ def test_text_with_no_pii_is_unchanged():
     masked, types = mask_pii(original)
     assert masked == original
     assert types == []
+
+
+def test_sanitize_accepts_chat_parser_text_accessor():
+    """LangChain's parser returns a str subclass that spaCy rejects directly."""
+    parsed = StrOutputParser().invoke(
+        AIMessage(content="The printer is out of toner")
+    )
+    assert isinstance(parsed, str)
+    assert type(parsed) is not str
+    assert security.sanitize_external_text(parsed) == "The printer is out of toner"
+
+    private = StrOutputParser().invoke(
+        AIMessage(content="Contact alex.smith@example.com about the printer")
+    )
+    assert "alex.smith@example.com" not in security.sanitize_external_text(private)
+
+
+def test_sanitize_rejects_non_text_values():
+    with pytest.raises(TypeError, match="string"):
+        security.sanitize_external_text({"private": "value"})
 
 
 # --- get_audit_summary defaults ----------------------------------------------

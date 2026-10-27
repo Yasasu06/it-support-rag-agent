@@ -109,7 +109,11 @@ def mask_pii(text: str) -> tuple[str, list]:
 
 def sanitize_external_text(text: str) -> str:
     """Fail closed before text is sent to a model, trace, or stored externally."""
-    masked, _ = mask_pii(text)
+    if not isinstance(text, str):
+        raise TypeError("External text must be a string")
+    # LangChain's StrOutputParser can return a str subclass (TextAccessor),
+    # which spaCy's tokenizer rejects unless converted to a plain str.
+    masked, _ = mask_pii(str(text))
     return masked
 
 
